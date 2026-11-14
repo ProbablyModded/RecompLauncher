@@ -1381,6 +1381,7 @@
           ${sw('auto_update_all', t('Update All Games Automatically'), t('Every installed game takes a new release as soon as the launcher finds one'))}
           ${sw('backup_before_update', t('Back up saves before updates'), t('The newest five copies of each game\'s saves'))}
           ${sw('auto_install', t('Auto-Install'), t('Open a game\'s setup or installer as soon as it finishes downloading'), S.settings.auto_install !== false)}
+          ${sw('launcher_updates', t('RecompLauncher Updates'), t('Look for and offer new versions of RecompLauncher'), S.settings.launcher_updates !== false)}
           ${sw('hide_ai', t('Hide AI-assisted recomps'), t('They won\'t show in the Catalog'))}
           ${sw('discord', t('Discord status'), t('Show the game you\'re playing on your Discord profile'), S.settings.discord !== false)}
           ${(() => { const on = window.reviewAskOn ? window.reviewAskOn() : true; return `<button type="button" class="tv-item" data-f data-key="s:reviewask" data-tvact="reviewask"><span class="k">${esc(t('Ask After Playing'))}<small>${esc(t('After you play a game for a while, the launcher asks how it ran. Never again for a game you\'ve reviewed.'))}</small></span><span class="switch" aria-checked="${on}"></span></button>`; })()}
@@ -3051,7 +3052,7 @@
       return;
     }
     if (el.dataset.toggle === 'start_at_login') { sfx('select'); await startAtLogin(!S.settings.start_at_login); draw(true); return; }
-    if (el.dataset.toggle) { sfx('select'); const k = el.dataset.toggle, on = k === 'sounds' || k === 'discord' || k === 'auto_install' ? S.settings[k] !== false : !!S.settings[k]; await saveSettings({ [k]: !on }); draw(true); if (k === 'steam_sync' && !on && window.steamSync) window.steamSync(false); if (k === 'auto_update_all' && !on) checkUpdates(); return; }
+    if (el.dataset.toggle) { sfx('select'); const k = el.dataset.toggle, on = k === 'sounds' || k === 'discord' || k === 'auto_install' || k === 'launcher_updates' ? S.settings[k] !== false : !!S.settings[k]; await saveSettings({ [k]: !on }); draw(true); if (k === 'steam_sync' && !on && window.steamSync) window.steamSync(false); if (k === 'auto_update_all' && !on) checkUpdates(); return; }
     if (el.dataset.shotI !== undefined) { sfx('select'); return shotView(Number(el.dataset.shotI)); }
     if (el.dataset.gset) return cycleSetting(el, 1);
     if (el.dataset.gbmod) return tvGbMod(TV.arg, el.dataset.gbmod);
