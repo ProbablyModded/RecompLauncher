@@ -216,6 +216,9 @@ function autoUpdates(id) {
   if (g.auto_update) return true;
   return autoUpdateAll() && !autoUpSkipped().has(id);
 }
+// Settings → RecompLauncher Updates: the launcher looks for and offers new versions of itself. On
+// unless the player turned it off. Off: only Check for Updates in the side menu looks.
+const launcherUpdates = () => S.settings.launcher_updates !== false;
 const installerDue = (id) => !!(S.library[id] && S.library[id].installer_setup);
 // The yellow Set Up: the developer's steps not done yet, or an installer waiting to run.
 const setupDue = (a) => !!a && ((needsSetup(a) && !setupDone(a.id)) || installerDue(a.id));
@@ -468,7 +471,7 @@ async function checkLauncher(btn) {
   // Asks the site once a minute at most; a second press within it reads the answer just given.
   const ask = Date.now() - (S.selfCheckedAt || 0) >= 60e3;
   if (ask) S.selfCheckedAt = Date.now();
-  try { v = await invoke('launcher_update', { force: ask }); } catch { bad = true; }
+  try { v = await invoke('launcher_update', { force: ask, manual: true }); } catch { bad = true; }
   if (!v && offNow()) bad = true;
   await new Promise((r) => setTimeout(r, Math.max(0, 900 - (Date.now() - t0))));
   if (btn) btn.disabled = false;
@@ -4700,7 +4703,8 @@ function pageSettings() {
           + row(t('Look for updates when the launcher opens'), t('Asks each installed game\'s GitHub for a newer release. Turn on Update automatically for a game in its Manage tab.'), sw('check_updates', st.check_updates, t('Look for updates')))
           + row(t('Update All Games Automatically'), t('Every installed game takes a new release as soon as the launcher finds one, with your saves backed up first. To keep one game waiting for you, turn off Update automatically in its Manage tab.'), sw('auto_update_all', autoUpdateAll(), t('Update All Games Automatically')))
           + row(t('Back up saves before updates'), t('Keeps the newest five copies of the saves in each game\'s folder.'), sw('backup_before_update', st.backup_before_update, t('Back up before updates')))
-          + row(t('Auto-Install'), t('When an Easy Setup game or a game that comes as an installer finishes downloading (an update too), its setup or installer opens right away. Off: it waits until you press Set Up on its page.'), sw('auto_install', autoInstall(), t('Auto-Install'))))
+          + row(t('Auto-Install'), t('When an Easy Setup game or a game that comes as an installer finishes downloading (an update too), its setup or installer opens right away. Off: it waits until you press Set Up on its page.'), sw('auto_install', autoInstall(), t('Auto-Install')))
+          + row(t('RecompLauncher Updates'), t('Looks for new versions of RecompLauncher itself and offers them. Off: it never looks or asks on its own; Check for Updates in the side menu still does.'), sw('launcher_updates', launcherUpdates(), t('RecompLauncher Updates'))))
         + group(t('Downloads'), row(t('Keep downloaded files'), t('Off: the zip is deleted once it\'s unpacked. On: it stays in the library\'s .downloads folder.'), sw('keep_downloads', st.keep_downloads, t('Keep downloaded files')))
           + row(t('Speed Limit'), t('Keeps downloads under this speed, so the rest of your home\'s internet stays quick.'), `<select class="sel" data-act="dl-limit" aria-label="${esc(t('Speed Limit'))}">${DL_LIMITS.map((n) => `<option value="${n}"${Number(ui.dl_limit || 0) === n ? ' selected' : ''}>${esc(n ? tf('{n} MB/s', { n }) : t('No Limit'))}</option>`).join('')}</select>`)
           + row(t('Slow Down While Playing'), t('While a game is running, downloads keep to 4 MB/s so the game gets your internet and drive first.'), sw('dl_slow_play', ui.dl_slow_play !== false, t('Slow Down While Playing'), 'dl-slow')))
@@ -7248,7 +7252,7 @@ function paintHoard() {
 }
 function hoarderGroup(group, row, sw, st) {
   const on = !!st.hoarder;
-  const main = row(t('Data Hoarder Mode'), t('Projects get taken down. With this on, every release of every game in your Library, installed or not, is downloaded and kept, including old ones, with its notes. Games you add to the Library are saved right away. Nothing is installed: installed games update only the usual way.'), sw('hoarder', on, t('Data Hoarder Mode')));
+  const main = row(t('Data Hoarder Mode'), t('Projects get taken down. With this on, every release of every game in your Library, installed or not, is downloaded and kept, including old ones, with its notes. Games you add to the Library are saved right away, and every game is checked for new releases each hour. Nothing is installed: installed games update only the usual way.'), sw('hoarder', on, t('Data Hoarder Mode')));
   if (!on) return group(t('Data Hoarder'), main);
   // row() escapes its description, so rows that need markup in it are written out here.
   const markup = (b, s, ctl) => `<div class="set-row"><div class="k"><b>${esc(b)}</b><span>${s}</span></div>${ctl}</div>`;
@@ -9229,6 +9233,7 @@ async function act(el, e) {
       if (k === 'auto_install') return saveSettings({ auto_install: !autoInstall() });
       // Turned on: the updates already waiting start now, not at the next check.
       if (k === 'auto_update_all') { await saveSettings({ auto_update_all: !autoUpdateAll() }); if (autoUpdateAll()) checkUpdates(); return; }
+      if (k === 'launcher_updates') { await saveSettings({ launcher_updates: !launcherUpdates() }); if (!launcherUpdates()) { S.launcherUpd = null; renderSide(); } else lookForLauncher(); return; }
       if (k === 'steam_sync') { await saveSettings({ steam_sync: !S.settings.steam_sync }); if (S.settings.steam_sync) steamSync(false); return; }
       if (k === 'start_at_login') { await startAtLogin(!S.settings.start_at_login); return render(true); }
       return saveSettings({ [k]: !S.settings[k] });
