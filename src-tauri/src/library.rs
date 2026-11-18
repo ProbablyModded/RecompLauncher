@@ -419,9 +419,10 @@ pub struct Settings {
     #[serde(default = "yes")]
     pub auto_install: bool,
     /// Settings → Update All Games Automatically: every installed game takes its new release as
-    /// soon as the launcher finds it, like each game's own Update automatically. Off by default,
-    /// so nobody's games start updating by themselves after the launcher updates.
-    #[serde(default)]
+    /// soon as the launcher finds it, like each game's own Update automatically. This fork keeps it
+    /// on by default (upstream: off), and reads the fork's older `auto_update_games` as the same
+    /// switch so a player's earlier choice carries over.
+    #[serde(default = "yes", alias = "auto_update_games")]
     pub auto_update_all: bool,
     /// Settings → Data Hoarder Mode: every release of every game in the Library (installed or just
     /// added) is downloaded and kept, with its notes, in `hoard_root` (hoard.rs). Nothing is
@@ -454,6 +455,12 @@ pub struct Settings {
     /// Now only has to install it.
     #[serde(default = "one")]
     pub launcher_check_hours: u32,
+    /// Settings → Updates → Install RecompLauncher Updates by Itself: a newer build found by the
+    /// clock is installed once the launcher is out of sight (in the tray or minimized) with no game
+    /// running and nothing downloading, and it starts again in the tray. While the window is in
+    /// use it waits for Update Now (already downloaded).
+    #[serde(default = "yes")]
+    pub launcher_auto_install: bool,
     /// Settings → Updates → Check Games Every: hours between game update checks while the
     /// launcher runs (1 to 168), with "Look for updates" on. Each check installs the games set to
     /// Update automatically, and Data Hoarder Mode downloads what's new.
@@ -544,7 +551,7 @@ impl Default for Settings {
             linux_graphics: String::new(),
             steam_sync: false,
             auto_install: true,
-            auto_update_all: false,
+            auto_update_all: true,
             hoarder: false,
             hoard_dir: None,
             hoard_this_pc_only: false,
@@ -553,6 +560,7 @@ impl Default for Settings {
             hoard_every_hours: one(),
             launcher_updates: true,
             launcher_check_hours: one(),
+            launcher_auto_install: true,
             game_check_hours: one(),
         }
     }
@@ -991,6 +999,8 @@ mod tests {
         let settings: super::Settings = serde_json::from_str(r#"{"library_dir":"/games"}"#).unwrap();
         assert_eq!(settings.launcher_check_hours, 1);
         assert_eq!(settings.game_check_hours, 1);
+        assert!(settings.launcher_auto_install);
+        assert!(settings.auto_update_all);
     }
 
     #[test]
@@ -1037,9 +1047,15 @@ mod tests {
     }
 
     #[test]
-    fn update_all_games_automatically_is_off_by_default_and_for_settings_saved_before_it() {
-        assert!(!super::Settings::default().auto_update_all);
+    fn update_all_games_automatically_is_on_by_default_in_this_fork() {
+        assert!(super::Settings::default().auto_update_all);
         let settings: super::Settings = serde_json::from_str(r#"{"library_dir":"/games"}"#).unwrap();
+        assert!(settings.auto_update_all);
+    }
+
+    #[test]
+    fn the_forks_older_update_all_switch_carries_over() {
+        let settings: super::Settings = serde_json::from_str(r#"{"library_dir":"/games","auto_update_games":false}"#).unwrap();
         assert!(!settings.auto_update_all);
     }
 
