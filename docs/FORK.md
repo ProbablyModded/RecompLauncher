@@ -22,6 +22,10 @@ This repository is a fork of [elripalda/RecompLauncher](https://github.com/elrip
   tray or minimized and no game, download or Data Hoarder sweep is running, then starts it again
   in the tray (`--tray`); while the window is in use, Update Now installs it. The **RecompLauncher
   Updates** switch turns the launcher's own checks off.
+- **Folder Structure** (docs/FOLDER-STRUCTURE.md, Settings → Games and folders): one folder layout
+  for installed games, designed by drag and drop with a live preview, with presets, per-field
+  fallbacks for metadata the catalog doesn't have, and Reorganize Existing Folders (journaled, with
+  Undo). `src-tauri/src/folders.rs`, `folders_move.rs`, `ui/folders.js`.
 - **The upstream sync** (`.github/workflows/fork-sync.yml`) and this page.
 
 Anything upstream already merged (the Auto-Install setting, for one) isn't carried here.
