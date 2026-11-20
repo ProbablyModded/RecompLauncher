@@ -612,6 +612,19 @@ pub fn launcher_to_steam(steam: &Path, art: &[(&str, Vec<u8>, &str)]) -> Result<
     write_entry(steam, "RecompLauncher", "--bigpicture", &launcher_icon(), art)
 }
 
+/// The launcher playing a game (`--play <id>`), as a desktop shortcut starts it: the program and
+/// its arguments as one command line. Add to Playnite uses it too.
+pub fn play_command(id: &str) -> (PathBuf, String) {
+    let (exe, pre) = start_command();
+    let args = with_start_args(&pre, &format!("--play {id}"));
+    (exe, args)
+}
+
+/// Arguments as one command line, each quoted when it needs to be.
+pub fn join_args(a: &[String]) -> String {
+    a.iter().map(|x| quote_arg(x)).collect::<Vec<_>>().join(" ")
+}
+
 /// How a shortcut starts the launcher: the program and the arguments that go before its own.
 /// Run as a Flatpak, the program inside the sandbox isn't on the PC at all: a shortcut starts it
 /// with `flatpak run <app id>`.
