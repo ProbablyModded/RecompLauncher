@@ -221,6 +221,12 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
+      - name: Build the Playnite add-on from source
+        shell: bash
+        # Add to Playnite's add-on (src-tauri/playnite): built again from its source, so the
+        # installer carries a DLL made from the code being released.
+        run: ./tools/build-playnite-link.sh
+
       - name: Build the installer
         shell: bash
         # Packaging downloads Tauri's tools from GitHub, which sometimes answers 504: tried again.
