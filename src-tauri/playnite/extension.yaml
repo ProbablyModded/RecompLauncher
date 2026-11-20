@@ -1,0 +1,9 @@
+Id: RecompLauncher_Link_458c5c75
+Name: RecompLauncher Link
+Author: RecompLauncher
+Version: 1.0
+Module: RecompLauncherLink.dll
+Type: GenericPlugin
+Links:
+  - Name: RecompLauncher
+    Url: https://github.com/elripalda/RecompLauncher
