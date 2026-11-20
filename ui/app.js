@@ -6412,6 +6412,7 @@ function gameMenu(id) {
         ...(S.os !== 'macos' ? [{ act: 'desktop', id, label: t('Add to desktop'), icon: 'desk' }] : []),
         ...(S.os === 'windows' || S.os === 'linux' ? [{ act: 'app-menu', id, label: S.os === 'windows' ? t('Add to Start Menu') : t('Add to App Menu'), icon: 'apps' }] : []),
         ...(S.steam ? [{ act: 'steam', id, label: t('Add to Steam'), icon: 'steam' }] : []),
+        ...(S.playnite ? [{ act: 'playnite', id, label: t('Add to Playnite'), icon: 'steam' }] : []),
         { act: 'fav', id, label: favs().includes(id) ? t('Remove from Favorites') : t('Add to Favorites'), icon: 'star' },
       ] },
       ...projectItem(x),
@@ -7210,6 +7211,26 @@ async function addToSteam(id, restart) {
     }
     S.steamSyncState = undefined;
     toast(tf('{name} is in your Steam library.', { name: S.library[id].name }));
+  } catch (e) { fail(e); }
+}
+
+// Add to Playnite: the launcher hands the game to its small Playnite add-on (put in Playnite's
+// Extensions folder the first time). Playnite loads add-ons when it starts, so an open Playnite
+// without it is restarted, asked first; or the game goes in the next time Playnite opens.
+window.addToPlaynite = addToPlaynite;
+async function addToPlaynite(id, restart) {
+  const name = (S.library[id] || {}).name || '';
+  try {
+    const r = await invoke('add_to_playnite', { id, restart });
+    if (r === 'playnite_restart') {
+      const v = await (window.ask || ask)(t('Restart Playnite?'), `<p>${esc(tf('Playnite picks up RecompLauncher\'s add-on when it starts, so the launcher closes Playnite and opens it again, and {name} goes in with its art. Or leave it open: it goes in the next time Playnite starts.', { name }))}</p>`,
+        [{ label: t('Not now'), v: null }, { label: t('Restart Playnite'), v: 'yes', main: true }]);
+      if (v === 'yes') { toast(t('Restarting Playnite…')); return addToPlaynite(id, true); }
+      return toast(tf('{name} goes in the next time Playnite starts.', { name }));
+    }
+    if (r === 'restarted') return toast(tf('Playnite is opening again, with {name} in your library.', { name }));
+    if (r === 'queued') return toast(tf('{name} goes in the next time Playnite starts.', { name }));
+    toast(tf('{name} is in your Playnite library.', { name }));
   } catch (e) { fail(e); }
 }
 
@@ -9155,6 +9176,7 @@ async function act(el, e) {
     case 'app-menu': try { await invoke('desktop_shortcut', { id, menu: true }); toast(tf(S.os === 'windows' ? '{name} is in your Start menu.' : '{name} is in your app menu.', { name: S.library[id].name })); } catch (err) { fail(err); } return;
     case 'desktop': try { await invoke('desktop_shortcut', { id }); toast(tf('{name} is on your desktop.', { name: S.library[id].name })); } catch (err) { fail(err); } return;
     case 'steam': return addToSteam(id, false);
+    case 'playnite': return addToPlaynite(id, false);
     case 'shots': S.shotsGame = id || ''; return go('shots');
     case 'shots-game': S.shotsGame = el.dataset.g; S.anim = 'enter-soft'; return render(true);
     case 'shot-open': return viewShot(Number(el.dataset.i));

@@ -51,6 +51,7 @@ pub mod plain;
 pub mod own_setup;
 pub mod ghinfo;
 pub mod ping;
+pub mod playnite;
 pub mod plugins;
 pub mod push;
 pub mod profile;
@@ -2491,6 +2492,59 @@ async fn add_to_steam(st: State<'_, App>, id: String, restart: bool) -> Res<Stri
         shortcuts::start_steam(&steam);
     }
     Ok(format!("added:{n}"))
+}
+
+/// Add the game to Playnite, with its art. It starts the way the player's desktop shortcuts do:
+/// straight to the game, or through the launcher when Shortcuts Go Through the Launcher is on (and
+/// always for one game of several, or one only the launcher can start for now).
+/// Answers: "added" (Playnite took it), "queued" (it goes in the next time Playnite opens),
+/// "playnite_restart" (Playnite is open without the add-on loaded; the window asks, and calls again
+/// with `restart` to close and reopen Playnite), "restarted".
+#[tauri::command]
+async fn add_to_playnite(st: State<'_, App>, id: String, restart: bool) -> Res<String> {
+    let p = playnite::find().ok_or_else(|| Error::Msg("Playnite isn't installed on this PC.".into()))?;
+    let g = installed_or_game(&st, &id)?;
+    if restart && p.pid.is_some() {
+        trail::note(format!("Add to Playnite ({id}): restarting Playnite to load RecompLauncher's add-on"));
+        playnite::close(&p).await.inspect_err(|e| trail::note(format!("Add to Playnite: {e}")))?;
+        playnite::open(&p);
+        return Ok("restarted".into());
+    }
+    let fresh = playnite::install_link(&p).inspect_err(|e| trail::note(format!("Add to Playnite ({id}): {e}")))?;
+    let name = shown_name(&st, &id, &g).await;
+    let direct_on = !st.lib.lock().unwrap().settings.ui.get("shortcut_launcher").and_then(Value::as_bool).unwrap_or(false);
+    let direct = if direct_on && game_of(&st, &id).is_none() { direct_start(&st, &id, &g) } else { None };
+    let start = match direct {
+        Some((exe, args)) => playnite::Start { exe, args: shortcuts::join_args(&args), through_launcher: false },
+        None => {
+            let (exe, args) = shortcuts::play_command(&id);
+            playnite::Start { exe, args, through_launcher: true }
+        }
+    };
+    let ga = game_art(&st, &id, &g).await;
+    let mut art: Vec<(&'static str, Vec<u8>, String)> = vec![("cover", ga.cover.0, ga.cover.1.to_string()), ("background", ga.hero.0, ga.hero.1.to_string())];
+    // Playnite's icon is a picture file (a program's own icon isn't copied in).
+    if let Some(i) = ga.icon.filter(|i| matches!(i.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref(), Some("ico" | "png" | "jpg" | "jpeg"))) {
+        let ext = i.extension().and_then(|e| e.to_str()).unwrap_or("png").to_lowercase();
+        art.push(("icon", std::fs::read(&i).unwrap_or_default(), ext));
+    }
+    let file = playnite::queue(&p, &id, &name, &start, &g.path, art).inspect_err(|e| trail::note(format!("Add to Playnite ({id}): {e}")))?;
+    let how = if start.through_launcher { "through the launcher" } else { "straight to the game" };
+    if p.pid.is_none() {
+        trail::note(format!("Add to Playnite ({id}): queued ({how}); Playnite is closed{}", if fresh { ", add-on put in" } else { "" }));
+        return Ok("queued".into());
+    }
+    if !p.link_loaded() {
+        trail::note(format!("Add to Playnite ({id}): queued ({how}); the open Playnite hasn't loaded the add-on"));
+        return Ok("playnite_restart".into());
+    }
+    if playnite::wait_taken(&file, 8).await {
+        trail::note(format!("Add to Playnite ({id}): added ({how})"));
+        Ok("added".into())
+    } else {
+        trail::note(format!("Add to Playnite ({id}): Playnite hasn't taken it yet ({how})"));
+        Ok("queued".into())
+    }
 }
 
 /// RecompLauncher itself in Steam, starting in Big Picture mode. Same Steam-is-open handling as a
@@ -8901,6 +8955,7 @@ fn get_state(st: State<'_, App>) -> Value {
     // Looked up before the library is locked: none of it needs it, and a slow drive or the
     // registry shouldn't hold up everything else that waits on the library.
     let steam = shortcuts::steam_dir().is_some();
+    let playnite = playnite::present();
     let deck = shortcuts::is_steam_deck();
     let pictures = ingame::shots_dir("").parent().map(|p| p.to_string_lossy().to_string());
     let moving = st.moving.lock().unwrap().clone();
@@ -8931,6 +8986,7 @@ fn get_state(st: State<'_, App>) -> Value {
         "jobs": jobs,
         "setupJobs": SETUP_STATUS.lock().unwrap().clone().unwrap_or_default(),
         "steam": steam,
+        "playnite": playnite,
         "pictures": pictures,
         "deck": deck,
         "bigArg": std::env::args().any(|a| a == "--bigpicture"),
@@ -10654,7 +10710,7 @@ pub fn run() {
             take_options_asked,
             get_state, get_catalog, get_releases, net_state, check_updates, launcher_update, install, cancel, uninstall, play, stop, set_exe, forget_program, set_setup_mode, open_folder,
             save_settings, set_start_at_login, list_monitors, prepare_tv_mode, leave_tv_mode, open_url, libraries, move_game, game_sizes, game_size, backups, backup_now, restore_backup, pc_check, set_ui_scale, update_retry, ge_proton_install, proton_now, repo_readme, install_vcredist, scan_roms, rom_matches, copy_files, support_local, folders_move::folders_get, folders_move::folders_preset, folders_move::folders_save, folders_move::folders_preview, folders_move::folders_plan, folders_move::folders_apply, folders_move::folders_undo, folders_move::folders_known,
-            desktop_shortcut, refresh_shortcut_art, open_app_control, fs_paste, portable_info, make_portable, add_to_steam, launcher_to_steam, steam_sync::steam_sync_now, steam_sync::steam_sync_state, steam_sync::steam_remove_all, hoard_state, hoard_now, recent_log, screenshots, open_shots, overlay_action, overlay_state, is_handheld, skip_backup, set_cover, art::art_source, art::art_open, art::art_save, art::art_search, art::art_for, all_screenshots, delete_screenshot,
+            desktop_shortcut, refresh_shortcut_art, open_app_control, fs_paste, portable_info, make_portable, add_to_steam, launcher_to_steam, steam_sync::steam_sync_now, steam_sync::steam_sync_state, steam_sync::steam_remove_all, hoard_state, hoard_now, recent_log, screenshots, open_shots, overlay_action, overlay_state, is_handheld, skip_backup, set_cover, art::art_source, art::art_open, art::art_save, art::art_search, art::art_for, all_screenshots, delete_screenshot, add_to_playnite,
             copy_screenshot, show_screenshot, controllers, prefetch_images, versions, build_check, news, game_info, mods_state, mods_online,
             mod_install, mod_remove, open_mods, send_report, beta_feedback, game_programs, run_program, game_root, boot::boot_builtin, update_launcher, resume_game, game_setup, set_game_copy, free_up_space, move_build, set_update_copy, set_game_setting, set_game_slider, set_game_binding, reset_game_bindings, usage::report_preview, usage::profile_report, usage::my_reports, usage::report_reply,
             recomp_games, adopt::move_listing, update_info, set_proxy, umu_repair, dlss_fetch, dlss_set, dlss_state, dlss_remove, cloud::library_pull, cloud::library_push, cloud::playtime_push, cloud::playtime_pull, cloud::saves_open_backups, game_action, setup_copy, setup_cancel, setup_status, setup_begin, setup_end, setup_input_set, setup_key_remove, setup_inputs_run, setup_use_build, easy_setup, set_game_options,
