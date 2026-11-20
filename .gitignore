@@ -18,3 +18,7 @@ packaging/flatpak/.flatpak-builder/
 # nix build output links
 /result
 /result-*
+
+# Playnite add-on build output (tools/build-playnite-link.sh)
+src-tauri/playnite/src/bin/
+src-tauri/playnite/src/obj/

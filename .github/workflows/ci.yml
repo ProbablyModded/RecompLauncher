@@ -80,6 +80,14 @@ jobs:
           node --check ui/setup-inputs.js
           node --check ui/games.js
 
+      - name: Build the Playnite add-on from source
+        if: runner.os != 'macOS'
+        shell: bash
+        # Add to Playnite ships a small Playnite add-on (src-tauri/playnite). Its DLL is committed so
+        # a plain build has it; here it's built again from its source (the runners have the .NET
+        # SDK), so the installers carry a DLL made from the code in this commit.
+        run: ./tools/build-playnite-link.sh
+
       - name: Run Rust tests
         run: npm test -- --locked
 
