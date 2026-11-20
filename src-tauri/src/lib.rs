@@ -222,10 +222,6 @@ pub struct App {
     running: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
     pids: Mutex<HashMap<String, u32>>,
     started: Mutex<HashMap<String, u64>>,
-    /// Upstream's one-download-at-a-time gate. This fork waits on slots::DOWNLOADS instead (its
-    /// limit is a setting); the field stays so upstream's code that builds App merges unchanged.
-    #[allow(dead_code)]
-    download_slot: Arc<tokio::sync::Semaphore>,
     /// Games being moved to another drive (their folder is briefly in two places).
     moving: Mutex<HashSet<String>>,
     overlay_open: AtomicBool,
@@ -10012,7 +10008,6 @@ pub fn run() {
                 running: Mutex::default(),
                 pids: Mutex::default(),
                 started: Mutex::default(),
-                download_slot: Arc::new(tokio::sync::Semaphore::new(1)),
                 moving: Mutex::default(),
                 overlay_open: AtomicBool::new(false),
                 looked: Mutex::new(HashSet::new()),
@@ -10726,7 +10721,6 @@ mod tests {
             running: Mutex::default(),
             pids: Mutex::default(),
             started: Mutex::default(),
-            download_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             moving: Mutex::default(),
             overlay_open: AtomicBool::new(false),
             looked: Mutex::new(HashSet::new()),

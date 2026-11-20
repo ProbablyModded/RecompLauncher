@@ -4463,8 +4463,7 @@ function pageSettings() {
         + group(t('Downloads'), row(t('Keep downloaded files'), t('Off: the zip is deleted once it\'s unpacked. On: it stays in the library\'s .downloads folder.'), sw('keep_downloads', st.keep_downloads, t('Keep downloaded files')))
           + row(t('Speed Limit'), t('Keeps downloads under this speed, so the rest of your home\'s internet stays quick.'), `<select class="sel" data-act="dl-limit" aria-label="${esc(t('Speed Limit'))}">${DL_LIMITS.map((n) => `<option value="${n}"${Number(ui.dl_limit || 0) === n ? ' selected' : ''}>${esc(n ? tf('{n} MB/s', { n }) : t('No Limit'))}</option>`).join('')}</select>`)
           + row(t('Slow Down While Playing'), t('While a game is running, downloads keep to 4 MB/s so the game gets your internet and drive first.'), sw('dl_slow_play', ui.dl_slow_play !== false, t('Slow Down While Playing'), 'dl-slow'))
-          // This fork's own rows are looked up by name, so upstream's page tests (which load
-          // pageSettings on its own) pass unchanged.
+          // Looked up by name: tests that load pageSettings on its own don't need these helpers.
           + (typeof atOnceRows === 'function' ? atOnceRows(row, ui) : ''))
         + (typeof hoarderGroup === 'function' ? hoarderGroup(group, row, sw, st) : '')
         + networkGroup(group, row, st);

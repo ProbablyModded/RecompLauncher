@@ -1811,7 +1811,6 @@ mod account_tests {
 mod child_retry_tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::sync::Arc;
 
     struct Fixture(App);
 
@@ -1827,7 +1826,7 @@ mod child_retry_tests {
             Self(App {
                 dir, http: reqwest::Client::new(), lib: Mutex::new(lib), jobs: Mutex::default(),
                 running: Mutex::default(), pids: Mutex::default(), started: Mutex::default(),
-                download_slot: Arc::new(tokio::sync::Semaphore::new(1)), moving: Mutex::default(),
+                moving: Mutex::default(),
                 overlay_open: AtomicBool::new(false), looked: Mutex::default(), headless: AtomicBool::new(false),
             })
         }
