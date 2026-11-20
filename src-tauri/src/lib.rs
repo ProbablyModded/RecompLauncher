@@ -505,7 +505,7 @@ async fn do_install(app: &AppHandle, st: &App, id: &str, dir: Option<PathBuf>, t
     if prev.as_ref().map(|p| p.local).unwrap_or(false) {
         return Err(Error::Msg("That's your local build. Take it out of the Library first to install the release.".into()));
     }
-    // Folder Structure: with "Automatically use my folder structure for new installations" on, a
+    // Folder Structure: with "Automatically Use My Folder Structure for New Installations" on, a
     // new game goes in a folder of the player's structure (folders_move.rs); updates stay put.
     let designed = if prev.is_none() { folders_move::new_target(st, &lib_dir, id, &entry, &cat) } else { None };
     let target = prev.as_ref().map(|p| p.path.clone()).or_else(|| designed.clone()).unwrap_or_else(|| lib_dir.join(folder_name(id)));
@@ -10615,7 +10615,7 @@ pub fn run() {
             take_setup_asked,
             take_options_asked,
             get_state, get_catalog, get_releases, net_state, check_updates, launcher_update, install, cancel, uninstall, play, stop, set_exe, forget_program, set_setup_mode, open_folder,
-            save_settings, set_start_at_login, list_monitors, prepare_tv_mode, leave_tv_mode, open_url, libraries, move_game, game_sizes, game_size, backups, backup_now, restore_backup, pc_check, set_ui_scale, update_retry, ge_proton_install, proton_now, repo_readme, install_vcredist, scan_roms, rom_matches, copy_files, support_local, folders_move::folders_get, folders_move::folders_preset, folders_move::folders_save, folders_move::folders_preview, folders_move::folders_plan, folders_move::folders_apply, folders_move::folders_undo,
+            save_settings, set_start_at_login, list_monitors, prepare_tv_mode, leave_tv_mode, open_url, libraries, move_game, game_sizes, game_size, backups, backup_now, restore_backup, pc_check, set_ui_scale, update_retry, ge_proton_install, proton_now, repo_readme, install_vcredist, scan_roms, rom_matches, copy_files, support_local, folders_move::folders_get, folders_move::folders_preset, folders_move::folders_save, folders_move::folders_preview, folders_move::folders_plan, folders_move::folders_apply, folders_move::folders_undo, folders_move::folders_known,
             desktop_shortcut, open_app_control, fs_paste, portable_info, make_portable, add_to_steam, launcher_to_steam, steam_sync::steam_sync_now, steam_sync::steam_sync_state, steam_sync::steam_remove_all, hoard_state, hoard_now, recent_log, screenshots, open_shots, overlay_action, overlay_state, is_handheld, skip_backup, set_cover, art::art_source, art::art_open, art::art_save, art::art_search, art::art_for, all_screenshots, delete_screenshot,
             copy_screenshot, show_screenshot, controllers, prefetch_images, versions, build_check, news, game_info, mods_state, mods_online,
             mod_install, mod_remove, open_mods, send_report, beta_feedback, game_programs, run_program, game_root, boot::boot_builtin, update_launcher, resume_game, game_setup, set_game_copy, free_up_space, move_build, set_update_copy, set_game_setting, set_game_slider, set_game_binding, reset_game_bindings, usage::report_preview, usage::profile_report, usage::my_reports, usage::report_reply,
