@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const app = fs.readFileSync(path.join(__dirname, '../ui/app.js'), 'utf8');
 const tv = fs.readFileSync(path.join(__dirname, '../ui/tv.js'), 'utf8');
 const fn = (src, name, indent = '') => src.match(new RegExp(`^${indent}(?:async )?function ${name}\\([^]*?^${indent}}`, 'm'))[0];
-const helpersSrc = [/^const autoInstall = .*$/m, /^const autoUpdateAll = .*$/m, /^const autoUpSkipped = .*$/m]
+const helpersSrc = [/^const autoInstall = .*$/m, /^const launcherUpdates = .*$/m, /^const autoUpdateAll = .*$/m, /^const autoUpSkipped = .*$/m]
   .map((re) => app.match(re)[0]).join('\n') + '\n' + fn(app, 'autoUpdates') + '\n' + fn(app, 'toggleAutoUpdate');
 
 function settingsContext(settings) {
