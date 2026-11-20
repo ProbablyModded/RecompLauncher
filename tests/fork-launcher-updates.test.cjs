@@ -10,7 +10,7 @@ const tv = fs.readFileSync(path.join(__dirname, '../ui/tv.js'), 'utf8');
 const lib = fs.readFileSync(path.join(__dirname, '../src-tauri/src/lib.rs'), 'utf8');
 const push = fs.readFileSync(path.join(__dirname, '../src-tauri/src/push.rs'), 'utf8');
 const fn = (src, name, indent = '') => src.match(new RegExp(`^${indent}(?:async )?function ${name}\\([^]*?^${indent}}`, 'm'))[0];
-const helpers = app.match(/^const autoInstall = .*$/m)[0] + '\n' + app.match(/^const launcherUpdates = .*$/m)[0];
+const helpers = [/^const autoInstall = .*$/m, /^const launcherUpdates = .*$/m, /^const autoUpdateAll = .*$/m].map((re) => app.match(re)[0]).join('\n');
 
 function settingsContext(settings) {
   const c = vm.createContext({
@@ -25,7 +25,7 @@ function settingsContext(settings) {
     SET_SECTIONS: [['updates', 'Updates']], SET_ICONS: {}, DL_LIMITS: [0],
     okMark: () => '', portableRow: () => '', geRow: () => '', networkGroup: () => '', hoarderGroup: () => '',
     backdrop: () => '', bar: () => '', region: (s) => s, pageHead: (s) => s,
-    homePinned: () => false, bgMode: () => '', langName: () => 'English',
+    homePinned: () => false, ownedGames: () => [], bgMode: () => '', langName: () => 'English',
     svg: () => '', hints: () => '', HEART: '',
   });
   c.window = c;
