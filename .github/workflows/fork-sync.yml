@@ -187,11 +187,16 @@ jobs:
             echo "Run workflow) and it closes this issue."
           } > body.md
           open=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          # With issues turned off in the repository, the report goes to the run's summary and the
+          # run still fails (so GitHub's failed-run email says the sync needs a hand).
           if [ -n "$open" ]; then
-            gh issue comment "$open" --body-file body.md
-          else
-            gh issue create --title "Upstream sync needs a hand" --label upstream-sync --body-file body.md
+            gh issue comment "$open" --body-file body.md && exit 0
+          elif gh issue create --title "Upstream sync needs a hand" --label upstream-sync --body-file body.md; then
+            exit 0
           fi
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::The upstream sync stopped on a conflict, and no issue could be opened (are issues turned off?). The run summary says which commit and files."
+          exit 1
 
   # Windows only: the fork's builds are for Windows PCs.
   build:
