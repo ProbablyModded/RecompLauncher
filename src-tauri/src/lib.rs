@@ -27,6 +27,7 @@ pub mod gamefiles;
 pub mod games;
 pub mod flatpak;
 pub mod gamebanana;
+pub mod game_info;
 pub mod hoard;
 mod folders;
 mod folders_move;
@@ -56,6 +57,7 @@ pub mod ping;
 pub mod playnite;
 pub mod plugins;
 pub mod push;
+pub mod quiver;
 pub mod profile;
 pub mod proton;
 pub mod secret;
@@ -2060,6 +2062,274 @@ fn copies_for(cat: &Value, found: &[roms::RomFile], dirs: &HashMap<String, PathB
     out
 }
 
+/// One game's copy, library state, settings, save backups and Look moved from one catalog id to
+/// another (merge_mine, merge_quiver). None, and nothing moved, while either is busy or both are
+/// installed; else whether a copy was installed under the old id.
+fn move_over(st: &App, old: &str, new: &str) -> Option<bool> {
+    let (old, new) = (old.to_string(), new.to_string());
+    // Not while either one is installing, updating, running, moving, being set up or getting
+    // mods, nor while the chosen saves folder can't be reached (its backups would stay behind):
+    // it's tried again the next time the list comes in.
+    let busy = [&old, &new].iter().any(|i| st.jobs.lock().unwrap().contains_key(*i) || st.running.lock().unwrap().contains_key(*i) || st.moving.lock().unwrap().contains(*i) || setup_busy(i) || mods_busy(i))
+        || saves::chosen_root().is_some_and(|p| !p.is_dir());
+    let had = {
+        let mut l = st.lib.lock().unwrap();
+        let had = l.installed.contains_key(&old);
+        if busy || (had && l.installed.contains_key(&new)) {
+            None
+        } else {
+            if let Some(a) = l.arts.remove(&old) {
+                l.arts.entry(new.clone()).or_insert(a);
+            }
+            l.move_play_history(&old, &new);
+            if let Some(mut g) = l.installed.remove(&old) {
+                g.id = new.clone();
+                l.put(&new, g);
+            }
+            for target in l.project_aliases.values_mut() {
+                if target == &old { *target = new.clone(); }
+            }
+            if let Some(m) = l.mods.remove(&old) {
+                l.mods.entry(new.clone()).or_insert(m);
+            }
+            if let Some(v) = l.seen_versions.remove(&old) {
+                l.seen_versions.entry(new.clone()).or_insert(v);
+            }
+            rename_id(&mut l.settings.ui, &old, &new);
+            Some(had)
+        }
+    };
+    let had = had?;
+    // Its save backups and this PC's notes about them, and its Look. What the official one
+    // already has stays as it is.
+    // Copies in the player's folder are kept by id. Beside the game they're kept by its
+    // folder, which doesn't change: then both are the same folder and nothing moves.
+    let renamed = st.lib.lock().unwrap().installed.get(&new).cloned();
+    let copies = (saves::place(&st.dir, &old, renamed.as_ref()), saves::place(&st.dir, &new, renamed.as_ref()));
+    let mut dirs = vec![copies, (st.dir.join("saves").join(&old), st.dir.join("saves").join(&new)), (st.dir.join("looks").join(&old), st.dir.join("looks").join(&new))];
+    dirs.retain(|(from, to)| from != to);
+    dirs.dedup();
+    for (from, to) in dirs {
+        if let Err(err) = move_into(&from, &to) {
+            trail::note(format!("{new}: couldn't move all of {} to {} ({err})", from.display(), to.display()));
+        }
+    }
+    // The player's own details (game_info.rs) go with it, unless they changed the new one too.
+    {
+        let _turn = game_info::TURN.lock().unwrap_or_else(|e| e.into_inner());
+        let mut info = game_info::load(&st.dir);
+        if let Some(v) = info.remove(&old) {
+            info.entry(new.clone()).or_insert(v);
+            if let Err(err) = game_info::save(&st.dir, &info) {
+                trail::note(format!("{new}: couldn't move its game info ({err})"));
+            }
+        }
+    }
+    trail::note(format!("{old}: the list has it now as {new}; {}", if had { "the copy here moved over to it" } else { "the list's one is used from now on" }));
+    Some(had)
+}
+
+/// Fork (Quiver Catalog Sync): a game imported from Quiver's catalog that RecompLauncher's own
+/// catalog now lists (the same repository): the native entry takes over, with its own install
+/// instructions, and the player's copy, library state and settings move over to it as merge_mine
+/// does. One the player never touched just leaves the file. Gives back the ones the player had:
+/// (Quiver id, the catalog's id, its name).
+pub(crate) fn merge_quiver(st: &App, cat: &Value) -> Vec<(String, String, String)> {
+    let _turn = quiver::TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut file = quiver::load(&st.dir);
+    let list: Vec<Value> = file.get("apps").and_then(Value::as_array).cloned().unwrap_or_default();
+    if list.is_empty() {
+        return vec![];
+    }
+    let native: std::collections::HashMap<String, (String, String)> = cat
+        .get("apps")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|a| !a.get("custom").and_then(Value::as_bool).unwrap_or(false) && !quiver::is_quiver(a))
+        .filter(|a| !str_of(a, "repo").is_empty())
+        .map(|a| (quiver::match_key(str_of(a, "repo")), (str_of(a, "id").to_string(), str_of(a, "name").to_string())))
+        .collect();
+    let (mut keep, mut out, mut dropped) = (vec![], vec![], 0usize);
+    for e in list {
+        let old = str_of(&e, "id").to_string();
+        let Some((new, name)) = native.get(&quiver::match_key(str_of(&e, "repo"))).filter(|(n, _)| *n != old).cloned() else {
+            keep.push(e);
+            continue;
+        };
+        let touched = {
+            let l = st.lib.lock().unwrap();
+            let saved = l.settings.ui.get("saved").and_then(Value::as_object).is_some_and(|m| m.contains_key(&old));
+            l.installed.contains_key(&old) || l.arts.contains_key(&old) || saved
+        };
+        let Some(_had) = move_over(st, &old, &new) else {
+            keep.push(e);
+            continue;
+        };
+        dropped += 1;
+        if !touched {
+            continue;
+        }
+        // Data Hoarder keeps a Library game's releases in a folder by its name: the native entry's
+        // name can differ, so its folder takes the new name and nothing is downloaded twice.
+        let settings = st.lib.lock().unwrap().settings.clone();
+        if settings.hoarder {
+            let root = settings.hoard_root();
+            let (from, to) = (root.join(hoard::safe_name(str_of(&e, "name"))), root.join(hoard::safe_name(&name)));
+            if from != to && from.is_dir() && !to.exists() {
+                if let Err(err) = std::fs::rename(&from, &to) {
+                    trail::note(format!("{new}: Data Hoarder folder {} stays where it is ({err})", from.display()));
+                }
+            }
+        }
+        out.push((old, new, name));
+    }
+    if dropped > 0 {
+        st.save();
+        file["apps"] = Value::Array(keep);
+        if let Err(err) = quiver::save(&st.dir, &file) {
+            trail::note(format!("Couldn't save the Quiver catalog list ({err})"));
+        }
+    }
+    out
+}
+
+/// Quiver Catalog Sync: reads Quiver Launcher's catalog and keeps the games RecompLauncher's own
+/// catalog (and the player's own games) doesn't have, matched by repository. A game the last sync
+/// imported that Quiver no longer lists stays while it's in the player's Library (projects get
+/// taken down; that's the point of keeping them). Gives back what it found (quiver::Stats).
+async fn quiver_sync_now(app: &AppHandle, include_tools: Option<bool>, auto: Option<bool>) -> Res<Value> {
+    let st = app.state::<App>();
+    let cat = catalog::catalog(&st.http, &st.dir, false).await?.data;
+    // Ones the catalog has now move over first, so their state isn't left behind.
+    let moved = merge_quiver(&st, &cat);
+    if !moved.is_empty() {
+        let _ = app.emit("mine-merged", moved.iter().map(|(from, to, name)| json!({ "from": from, "to": to, "name": name })).collect::<Vec<_>>());
+    }
+    let (apps, status) = quiver::fetch(&st.http).await?;
+    let known = quiver::native_repos(&cat);
+    // Matched games (the same repository): Quiver's details, kept to fill what RecompLauncher's
+    // own entries leave empty (quiver::fill_gaps, put in RecompLauncher's words when shown).
+    let fill = quiver::fills(&apps, &status, &quiver::native_ids(&cat), quiver::now());
+    let yours: std::collections::HashSet<String> = catalog::mine(&st.dir).iter().map(|e| quiver::match_key(str_of(e, "repo"))).collect();
+    let _turn = quiver::TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut file = quiver::load(&st.dir);
+    let include = include_tools.unwrap_or_else(|| file.get("include_tools").and_then(Value::as_bool).unwrap_or(false));
+    let before: Vec<Value> = file.get("apps").and_then(Value::as_array).cloned().unwrap_or_default();
+    let now = quiver::now();
+    let (mut list, stats) = quiver::import(&apps, &status, &known, &yours, &before, include, now);
+    // Kept: ones the player has (installed or in the Library) that this sync didn't bring back.
+    let mut kept = 0usize;
+    {
+        let l = st.lib.lock().unwrap();
+        let saved = l.settings.ui.get("saved").and_then(Value::as_object).cloned().unwrap_or_default();
+        for e in before {
+            let id = str_of(&e, "id").to_string();
+            if list.iter().any(|x| str_of(x, "id") == id || quiver::match_key(str_of(x, "repo")) == quiver::match_key(str_of(&e, "repo"))) {
+                continue;
+            }
+            if known.contains(&quiver::match_key(str_of(&e, "repo"))) {
+                continue;
+            }
+            if l.installed.contains_key(&id) || saved.contains_key(&id) {
+                list.push(e);
+                kept += 1;
+            }
+        }
+    }
+    file["apps"] = Value::Array(list);
+    file["fill"] = Value::Object(fill);
+    file["synced"] = json!(now);
+    file["include_tools"] = json!(include);
+    if let Some(a) = auto {
+        file["auto"] = json!(a);
+    }
+    file["stats"] = serde_json::to_value(&stats).unwrap_or(Value::Null);
+    file["stats"]["kept"] = json!(kept);
+    quiver::save(&st.dir, &file)?;
+    trail::note(format!("Quiver Catalog Sync: {} of {} imported ({} already in the catalog)", stats.imported, stats.quiver, stats.matched));
+    let _ = app.emit("catalog-fresh", ());
+    Ok(quiver_status_of(&file))
+}
+
+fn quiver_status_of(file: &Value) -> Value {
+    json!({
+        "synced": file.get("synced").cloned().unwrap_or(json!(0)),
+        "auto": file.get("auto").and_then(Value::as_bool).unwrap_or(false),
+        "include_tools": file.get("include_tools").and_then(Value::as_bool).unwrap_or(false),
+        "count": file.get("apps").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
+        "stats": file.get("stats").cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// Settings → Games and folders → Quiver Catalog: Sync Now.
+#[tauri::command]
+async fn quiver_sync(app: AppHandle, include_tools: Option<bool>, auto: Option<bool>) -> Res<Value> {
+    static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if RUNNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Err(Error::Msg("A sync is already running.".into()));
+    }
+    let r = quiver_sync_now(&app, include_tools, auto).await;
+    RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    r
+}
+
+/// What the last sync found, and the section's switches.
+#[tauri::command(async)]
+fn quiver_status(st: State<'_, App>) -> Value {
+    quiver_status_of(&quiver::load(&st.dir))
+}
+
+/// The section's switches, saved without syncing.
+#[tauri::command(async)]
+fn quiver_options(st: State<'_, App>, auto: Option<bool>, include_tools: Option<bool>) -> Res<Value> {
+    let _turn = quiver::TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut file = quiver::load(&st.dir);
+    if let Some(a) = auto {
+        file["auto"] = json!(a);
+    }
+    if let Some(t) = include_tools {
+        file["include_tools"] = json!(t);
+    }
+    quiver::save(&st.dir, &file)?;
+    Ok(quiver_status_of(&file))
+}
+
+/// Takes the imported games back out, except ones the player has (installed or in the Library).
+#[tauri::command(async)]
+fn quiver_clear(st: State<'_, App>) -> Res<Value> {
+    let _turn = quiver::TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut file = quiver::load(&st.dir);
+    let list: Vec<Value> = file.get("apps").and_then(Value::as_array).cloned().unwrap_or_default();
+    let keep: Vec<Value> = {
+        let l = st.lib.lock().unwrap();
+        let saved = l.settings.ui.get("saved").and_then(Value::as_object).cloned().unwrap_or_default();
+        list.into_iter().filter(|e| l.installed.contains_key(str_of(e, "id")) || saved.contains_key(str_of(e, "id"))).collect()
+    };
+    file["apps"] = Value::Array(keep);
+    file["fill"] = json!({});
+    file["auto"] = json!(false);
+    quiver::save(&st.dir, &file)?;
+    Ok(quiver_status_of(&file))
+}
+
+/// "Keep in Sync": once a day, in the background, when the catalog is read.
+fn quiver_auto(app: &AppHandle) {
+    let st = app.state::<App>();
+    let file = quiver::load(&st.dir);
+    let on = file.get("auto").and_then(Value::as_bool).unwrap_or(false);
+    let last = file.get("synced").and_then(Value::as_u64).unwrap_or(0);
+    if !on || quiver::now().saturating_sub(last) < quiver::AUTO_EVERY || net::offline() {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = quiver_sync(app.clone(), None, None).await {
+            trail::note(format!("Quiver Catalog Sync (daily): {e}"));
+        }
+    });
+}
+
 /// A game the player added by its link that the list now has itself (the same repo, under the
 /// list's own id): their copy becomes the list's, where it is, with its version, settings, save
 /// backups, play time, mods, favorites and pins, so nothing has to be installed again. Not while
@@ -2071,7 +2341,8 @@ pub(crate) fn merge_mine(st: &App, cat: &Value) -> Vec<(String, String, String)>
     if list.is_empty() {
         return vec![];
     }
-    let apps: Vec<&Value> = cat.get("apps").and_then(Value::as_array).map(|a| a.iter().filter(|x| !x.get("custom").and_then(Value::as_bool).unwrap_or(false)).collect()).unwrap_or_default();
+    // The catalog's own entries only: not the player's, nor ones imported from Quiver's catalog.
+    let apps: Vec<&Value> = cat.get("apps").and_then(Value::as_array).map(|a| a.iter().filter(|x| !x.get("custom").and_then(Value::as_bool).unwrap_or(false) && !quiver::is_quiver(x)).collect()).unwrap_or_default();
     let (mut keep, mut out) = (vec![], vec![]);
     for e in list {
         let old = str_of(&e, "id").to_string();
@@ -2081,57 +2352,10 @@ pub(crate) fn merge_mine(st: &App, cat: &Value) -> Vec<(String, String, String)>
             continue;
         };
         let new = str_of(o, "id").to_string();
-        // Not while either one is installing, updating, running, moving, being set up or getting
-        // mods, nor while the chosen saves folder can't be reached (its backups would stay behind):
-        // it's tried again the next time the list comes in.
-        let busy = [&old, &new].iter().any(|i| st.jobs.lock().unwrap().contains_key(*i) || st.running.lock().unwrap().contains_key(*i) || st.moving.lock().unwrap().contains(*i) || setup_busy(i) || mods_busy(i))
-            || saves::chosen_root().is_some_and(|p| !p.is_dir());
-        let had = {
-            let mut l = st.lib.lock().unwrap();
-            let had = l.installed.contains_key(&old);
-            if busy || (had && l.installed.contains_key(&new)) {
-                None
-            } else {
-                if let Some(a) = l.arts.remove(&old) {
-                    l.arts.entry(new.clone()).or_insert(a);
-                }
-                l.move_play_history(&old, &new);
-                if let Some(mut g) = l.installed.remove(&old) {
-                    g.id = new.clone();
-                    l.put(&new, g);
-                }
-                for target in l.project_aliases.values_mut() {
-                    if target == &old { *target = new.clone(); }
-                }
-                if let Some(m) = l.mods.remove(&old) {
-                    l.mods.entry(new.clone()).or_insert(m);
-                }
-                if let Some(v) = l.seen_versions.remove(&old) {
-                    l.seen_versions.entry(new.clone()).or_insert(v);
-                }
-                rename_id(&mut l.settings.ui, &old, &new);
-                Some(had)
-            }
-        };
-        let Some(had) = had else {
+        let Some(_had) = move_over(st, &old, &new) else {
             keep.push(e);
             continue;
         };
-        // Its save backups and this PC's notes about them, and its Look. What the official one
-        // already has stays as it is.
-        // Copies in the player's folder are kept by id. Beside the game they're kept by its
-        // folder, which doesn't change: then both are the same folder and nothing moves.
-        let renamed = st.lib.lock().unwrap().installed.get(&new).cloned();
-        let copies = (saves::place(&st.dir, &old, renamed.as_ref()), saves::place(&st.dir, &new, renamed.as_ref()));
-        let mut dirs = vec![copies, (st.dir.join("saves").join(&old), st.dir.join("saves").join(&new)), (st.dir.join("looks").join(&old), st.dir.join("looks").join(&new))];
-        dirs.retain(|(from, to)| from != to);
-        dirs.dedup();
-        for (from, to) in dirs {
-            if let Err(err) = move_into(&from, &to) {
-                trail::note(format!("{new}: couldn't move all of {} to {} ({err})", from.display(), to.display()));
-            }
-        }
-        trail::note(format!("{old}: the list has it now as {new}; {}", if had { "the copy here moved over to it" } else { "the list's one is used from now on" }));
         out.push((old, new, str_of(o, "name").to_string()));
     }
     if !out.is_empty() {
@@ -2191,7 +2415,7 @@ fn rename_id(v: &mut Value, old: &str, new: &str) {
 /// After a fresh catalog: tell the player about new recomps for games they own.
 pub(crate) fn note_new_apps(app: &AppHandle, st: &App, cat: &Value) {
     // The player's own (added by link) aren't news.
-    let ids: Vec<String> = cat.get("apps").and_then(Value::as_array).map(|a| a.iter().filter(|x| !x.get("custom").and_then(Value::as_bool).unwrap_or(false)).filter_map(|x| x.get("id")?.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    let ids: Vec<String> = cat.get("apps").and_then(Value::as_array).map(|a| a.iter().filter(|x| !x.get("custom").and_then(Value::as_bool).unwrap_or(false) && !quiver::is_quiver(x)).filter_map(|x| x.get("id")?.as_str().map(str::to_string)).collect()).unwrap_or_default();
     if ids.is_empty() {
         return;
     }
@@ -5082,6 +5306,11 @@ async fn github_lookup(st: State<'_, App>, link: String, sgdb_key: Option<String
         "art_error": art_error,
         "hero_default": if lab { String::new() } else { format!("https://opengraph.githubassets.com/1/{repo}") },
         "host": if fj { "forgejo" } else if lab { "gitlab" } else { "github" },
+        // Fork (custom games): more of the form filled in from what the project says.
+        "author": info.get("owner").and_then(|o| o.get("login")).and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| path.split('/').next().unwrap_or("").to_string()),
+        "tags": topics,
+        "website": info.get("homepage").or_else(|| info.get("website")).and_then(Value::as_str).filter(|u| u.starts_with("https://")).unwrap_or(""),
+        "license": info.get("license").and_then(|l| l.get("spdx_id").or_else(|| l.get("name"))).and_then(Value::as_str).unwrap_or(""),
     }))
 }
 
@@ -5116,7 +5345,7 @@ async fn github_os(st: &App, repo: &str) -> Res<&'static str> {
 }
 
 /// What the player can set on a game they added themselves.
-const MINE_FIELDS: &[&str] = &["name", "game", "origin", "blurb", "cover", "hero", "logo"];
+const MINE_FIELDS: &[&str] = &["name", "game", "origin", "blurb", "cover", "hero", "logo", "author", "genre", "first", "website", "notes"];
 
 /// Add a recomp by its GitHub link. One the catalog already lists is that one; another becomes the
 /// player's own entry, with what its repo says about itself and what the player set (`info`: name,
@@ -5160,7 +5389,14 @@ async fn add_github(app: AppHandle, st: State<'_, App>, link: String, info: Opti
         "hero": if lab { String::new() } else { format!("https://opengraph.githubassets.com/1/{repo}") },
         "released": newest.and_then(|r| r.published_at.clone()).unwrap_or_default(),
         "stars": meta.get("stargazers_count").or_else(|| meta.get("stars_count")).cloned().unwrap_or(Value::Null),
+        "license": meta.get("license").and_then(|l| l.get("spdx_id").or_else(|| l.get("name"))).and_then(Value::as_str).filter(|l| *l != "NOASSERTION").unwrap_or(""),
+        "tags": meta.get("topics").and_then(Value::as_array).map(|l| l.iter().take(12).cloned().collect::<Vec<_>>()).unwrap_or_default(),
+        "added": quiver::day_of(Some(library::now() as i64 * 1000)),
+        "tag": newest.map(|r| r.tag_name.clone()).unwrap_or_default(),
         "custom": true,
+        // Fork (custom games): what the project said about itself the day it was added, kept as
+        // it was even if the project changes or goes away later.
+        "snapshot": mine_snapshot(&repo, &meta, newest, rels.iter().filter(|r| !r.draft).count()),
     });
     if fj {
         entry["host"] = json!("forgejo");
@@ -5184,12 +5420,62 @@ async fn add_github(app: AppHandle, st: State<'_, App>, link: String, info: Opti
     Ok(json!({"id": id, "known": false, "name": str_of(&entry, "name")}))
 }
 
+/// A game added by link: its project's details on the day it was added (the repo's own
+/// description, topics, license, website, stars and dates, and its newest release then).
+fn mine_snapshot(repo: &str, meta: &Value, newest: Option<&Release>, releases: usize) -> Value {
+    let pick = |k: &str| meta.get(k).cloned().unwrap_or(Value::Null);
+    json!({
+        "taken": library::now(),
+        "url": catalog::repo_home(repo),
+        "description": pick("description"),
+        "topics": pick("topics"),
+        "license": meta.get("license").and_then(|l| l.get("spdx_id").or_else(|| l.get("name"))).cloned().unwrap_or(Value::Null),
+        "homepage": meta.get("homepage").or_else(|| meta.get("website")).cloned().unwrap_or(Value::Null),
+        "stars": meta.get("stargazers_count").or_else(|| meta.get("stars_count")).cloned().unwrap_or(Value::Null),
+        "forks": meta.get("forks_count").cloned().unwrap_or(Value::Null),
+        "default_branch": pick("default_branch"),
+        "created_at": pick("created_at"),
+        "pushed_at": meta.get("pushed_at").or_else(|| meta.get("updated_at")).cloned().unwrap_or(Value::Null),
+        "archived": pick("archived"),
+        "releases": releases,
+        "newest_release": newest.map(|r| json!({ "tag": r.tag_name, "name": r.name, "published_at": r.published_at, "url": r.html_url, "files": r.assets.iter().map(|a| a.name.clone()).collect::<Vec<_>>() })),
+    })
+}
+
 fn set_mine_fields(entry: &mut Value, i: &serde_json::Map<String, Value>) {
+    // Fork (custom games): tags as a list (or words between commas), and the release file to
+    // download for each system as the catalog's own pattern (`"assets": {"windows": "*-win64.zip"}`).
+    if let Some(t) = i.get("tags") {
+        let words: Vec<String> = match t {
+            Value::Array(l) => l.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+            Value::String(s) => s.split(',').map(str::to_string).collect(),
+            _ => vec![],
+        };
+        let mut seen = std::collections::HashSet::new();
+        let tags: Vec<Value> = words.iter().map(|w| w.trim().chars().take(40).collect::<String>()).filter(|w| !w.is_empty() && seen.insert(w.to_lowercase())).take(20).map(Value::String).collect();
+        entry["tags"] = Value::Array(tags);
+    }
+    if let Some(a) = i.get("assets").and_then(Value::as_object) {
+        let mut out = serde_json::Map::new();
+        for os in ["windows", "linux", "macos"] {
+            let p: String = a.get(os).and_then(Value::as_str).unwrap_or("").trim().chars().take(200).collect();
+            if !p.is_empty() && !p.contains(['/', '\\']) {
+                out.insert(os.into(), Value::String(p));
+            }
+        }
+        if out.is_empty() {
+            if let Some(o) = entry.as_object_mut() {
+                o.remove("assets");
+            }
+        } else {
+            entry["assets"] = Value::Object(out);
+        }
+    }
     for k in MINE_FIELDS {
         if let Some(v) = i.get(*k).and_then(Value::as_str) {
-            let v: String = v.trim().chars().take(if *k == "blurb" { 600 } else { 300 }).collect();
-            // Pictures from the web only (https), or none.
-            if ["cover", "hero", "logo"].contains(k) && !(v.is_empty() || v.starts_with("https://")) {
+            let v: String = v.trim().chars().take(if matches!(*k, "blurb" | "notes") { 4000 } else { 300 }).collect();
+            // Pictures and the website from the web only (https), or none.
+            if ["cover", "hero", "logo", "website"].contains(k) && !(v.is_empty() || v.starts_with("https://")) {
                 continue;
             }
             if v.is_empty() && *k == "name" {
@@ -5211,6 +5497,23 @@ fn update_mine(st: State<'_, App>, id: String, info: Value) -> Res<()> {
     }
     catalog::save_mine(&st.dir, &list)?;
     Ok(())
+}
+
+/// Fork: Edit Game Info on any game the catalog lists (RecompLauncher's or one imported from
+/// Quiver's): what the player changes is kept in game-info.json and laid over the catalog
+/// (game_info.rs). A field sent empty goes back to the catalog's value; `reset` takes every change off.
+#[tauri::command(async)]
+fn set_game_info(st: State<'_, App>, id: String, info: Value, reset: Option<bool>) -> Res<Value> {
+    let _turn = game_info::TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut all = game_info::load(&st.dir);
+    if reset.unwrap_or(false) {
+        all.remove(&id);
+        game_info::save(&st.dir, &all)?;
+        return Ok(json!({}));
+    }
+    let kept = game_info::set(&mut all, &id, info.as_object().ok_or_else(|| Error::Msg("Nothing to save.".into()))?);
+    game_info::save(&st.dir, &all)?;
+    Ok(kept)
 }
 
 /// Take a recomp the player added by its link back out (when it isn't installed).
@@ -7501,7 +7804,9 @@ fn refresh_repo_profiles(app: &AppHandle, st: &App, cat: &Value, force: bool) {
 /// merge_mine, with the list sent to the window without the entries moved over, and the window
 /// told ("mine-merged") so it reads the Library again and says so.
 fn merged_mine(app: &AppHandle, st: &App, data: &mut Value) {
-    let merged = merge_mine(st, data);
+    let mut merged = merge_mine(st, data);
+    merged.extend(merge_quiver(st, data));
+    quiver_auto(app);
     if merged.is_empty() {
         return;
     }
@@ -10672,6 +10977,11 @@ pub fn run() {
             github_lookup,
             github_art,
             update_mine,
+            quiver_sync,
+            quiver_status,
+            quiver_options,
+            quiver_clear,
+            set_game_info,
             release_builds,
             troubleshoot,
             unblock_game,
@@ -11833,6 +12143,55 @@ mod tests {
         let cat = catalog::with_mine(&d, json!({ "apps": [{ "id": "game", "repo": "me/game" }] }));
         assert!(merge_mine(&st, &cat).is_empty());
         assert_eq!(st.lib.lock().unwrap().installed.len(), 2);
+        assert_eq!(catalog::mine(&d).len(), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_quiver_game_moves_over_when_the_catalog_has_its_repo() {
+        let d = std::env::temp_dir().join(format!("rl-qmerge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        quiver::save(&d, &json!({ "apps": [
+            { "id": "qv-game", "repo": "Dev/Game.git", "name": "Game (Quiver)", "quiver": {} },
+            { "id": "qv-untouched", "repo": "dev/untouched", "name": "U", "quiver": {} },
+            { "id": "qv-other", "repo": "dev/other", "name": "Other", "quiver": {} }
+        ] })).unwrap();
+        let mut lib = Library::default();
+        lib.installed.insert("qv-game".into(), Installed { id: "qv-game".into(), name: "Game".into(), tag: "v2".into(), path: d.join("games/game"), repo: "Dev/Game".into(), ..Default::default() });
+        lib.settings.ui = json!({ "favs": ["qv-game"] });
+        let st = app_in(&d, lib);
+        // Matched by repository (any case, .git or not), never by name.
+        let cat = catalog::with_mine(&d, json!({ "apps": [{ "id": "game", "repo": "dev/game", "name": "Game" }, { "id": "u", "repo": "dev/untouched", "name": "U" }, { "id": "x", "repo": "dev/x", "name": "Other" }] }));
+        let shown = cat["apps"].as_array().unwrap();
+        assert_eq!(shown.iter().find(|a| a["id"] == "qv-game").unwrap()["superseded_by"], "game");
+        assert!(shown.iter().find(|a| a["id"] == "qv-other").unwrap().get("superseded_by").is_none());
+        // Busy: next time.
+        st.jobs.lock().unwrap().insert("qv-game".into(), Arc::new(AtomicBool::new(false)));
+        let quiet = merge_quiver(&st, &cat);
+        assert!(quiet.is_empty(), "the untouched one leaves silently");
+        assert!(quiver::entries(&d).iter().any(|e| e["id"] == "qv-game"));
+        st.jobs.lock().unwrap().clear();
+        assert_eq!(merge_quiver(&st, &cat), vec![("qv-game".to_string(), "game".to_string(), "Game".to_string())]);
+        let l = st.lib.lock().unwrap().clone();
+        assert_eq!(l.installed["game"].tag, "v2");
+        assert!(!l.installed.contains_key("qv-game"));
+        assert_eq!(l.settings.ui["favs"], json!(["game"]));
+        let left: Vec<String> = quiver::entries(&d).iter().map(|e| e["id"].as_str().unwrap().to_string()).collect();
+        assert_eq!(left, vec!["qv-other".to_string()]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_game_added_by_link_never_moves_into_a_quiver_entry() {
+        let d = std::env::temp_dir().join(format!("rl-qmerge2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        catalog::save_mine(&d, json!([{ "id": "gh-me-game", "repo": "me/game", "custom": true }]).as_array().unwrap()).unwrap();
+        quiver::save(&d, &json!({ "apps": [{ "id": "qv-game", "repo": "me/game", "quiver": {} }] })).unwrap();
+        let st = app_in(&d, Library::default());
+        let cat = catalog::with_mine(&d, json!({ "apps": [] }));
+        assert!(merge_mine(&st, &cat).is_empty());
         assert_eq!(catalog::mine(&d).len(), 1);
         let _ = std::fs::remove_dir_all(&d);
     }
