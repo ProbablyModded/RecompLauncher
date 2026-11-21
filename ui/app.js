@@ -2235,7 +2235,7 @@ const SEE_ALL = {
 };
 // Discover with nothing narrowing it. Hide Ended, Runs On and Hide AI-assisted are the player's
 // own standing choices, so they stay.
-const FIND_CLEAR = { genre: '', origin: '', tag: '', show: '', easy: false, mp: false, great: false, deckgreat: false, picked: false };
+const FIND_CLEAR = { genre: '', origin: '', tag: '', show: '', src: '', easy: false, mp: false, great: false, deckgreat: false, picked: false };
 function seeAll(key) {
   const to = SEE_ALL[key];
   if (!to) return;
@@ -2300,7 +2300,7 @@ function discoverList(ended = false, leftOut = false) {
   const f = S.find, q = S.q.trim();
   const games = byGame();
   const onThisPC = leftOut ? hiddenByProton : forOS;
-  let list = withGames(visible()).filter((a) => (!f.genre || a.genre === f.genre) && (!f.origin || a.origin === f.origin) && (!f.tag || tagsOf(a).includes(f.tag)) && showOk(a, f.show) && onThisPC(a) && runsFits(a, runsPick()) && (!f.great || playsGreat(a)) && (!f.deckgreat || !onHandheld() || greatOnDeck(a)) && (!f.easy || turnkey(a)) && (!f.mp || isMulti(a)) && (ended ? isEnded(a) : keepEnded(a, f))
+  let list = withGames(visible()).filter((a) => (!f.genre || a.genre === f.genre) && (!f.origin || a.origin === f.origin) && (!f.tag || tagsOf(a).includes(f.tag)) && showOk(a, f.show) && srcOk(a, f.src) && onThisPC(a) && runsFits(a, runsPick()) && (!f.great || playsGreat(a)) && (!f.deckgreat || !onHandheld() || greatOnDeck(a)) && (!f.easy || turnkey(a)) && (!f.mp || isMulti(a)) && (ended ? isEnded(a) : keepEnded(a, f))
     && (!q || sMatch((games ? [a.game, (verGroup(a) || {}).name, a.parentName] : [a.name, a.game, a.parentName, a.author, originName(a.origin), GENRES[a.genre], t(GENRES[a.genre]), ...tagsOf(a)]).filter(Boolean).join(' '), q)));
   const soonLast = (x, y) => (x.soon ? 1 : 0) - (y.soon ? 1 : 0);
   if (f.sort === 'new') list.sort(byNew); else if (f.sort === 'updated') list.sort(byUpdated); else if (f.sort === 'az') list.sort((x, y) => x.name.localeCompare(y.name)); else if (f.sort === 'stars') list.sort((x, y) => (y.stars || 0) - (x.stars || 0)); else list.sort(byDlConsolesFirst);
@@ -2324,6 +2324,12 @@ const pillSel = (label, act, opts, cur, cls = '') => `<label class="pill-sel${cl
 const originSel = (f, cls) => pillSel(t('Console'), 'origin', [['', t('Any')], ...originsAZ().map((o) => [o.id, o.name, 'c:' + o.id])], f.origin, cls);
 const genreSel = (f, genres, cls) => pillSel(t('Genre'), 'genre-sel', [['', t('Any')], ...genres.map((k) => [k, t(GENRES[k])])], f.genre, cls);
 const showSel = (f) => pillSel(t('Show'), 'show-sel', showsNow(f.show || '').map(([k, n]) => [k, t(n)]), f.show || '');
+// Fork: the Source filter, once another catalog's games are in it (a script gives importSources(),
+// [key, name] pairs, and importFrom(a), an entry's key): Any, RecompLauncher's own, or that catalog's.
+const srcOpts = () => (typeof globalThis.importSources === 'function' ? globalThis.importSources() || [] : []);
+const srcOf = (a) => (typeof globalThis.importFrom === 'function' ? globalThis.importFrom(a) : '') || '';
+const srcOk = (a, k) => !k || !srcOpts().length || (k === 'rl' ? !srcOf(a) : srcOf(a) === k);
+const srcSel = (f) => { const o = srcOpts(); return o.length ? pillSel(t('Source'), 'src-sel', [['', t('Any')], ['rl', 'RecompLauncher'], ...o], f.src || '') : ''; };
 const tagSel = (f) => pillSel(t('Tag'), 'tag-sel', [['', t('Any')], ...allTags().map((k) => [k, k])], f.tag || '');
 const discToggles = (f) => `<button type="button" class="toggle" role="switch" aria-checked="${!!f.easy}" data-act="easy-f">${DISC_S}${esc(t('Easy Setup'))}<span class="switch" aria-hidden="true"></span></button>
       <button type="button" class="toggle" role="switch" aria-checked="${!!f.mp}" data-act="mp-f">${esc(t('Multiplayer'))}<span class="switch" aria-hidden="true"></span></button>
@@ -2351,6 +2357,7 @@ function pageDiscover() {
       ${showSel(f)}
       ${S.os === 'linux' ? '' : runsSel()}
       ${tagSel(f)}
+      ${srcSel(f)}
     </div><div class="grp">
       ${discToggles(f)}
     </div></div>
@@ -2362,7 +2369,7 @@ function pageDiscover() {
 // they're always at hand further down. The rest are under Filters. Outside the page (in the window's
 // frame), so a redraw of the page doesn't touch it, and only on Discover.
 const SLIDERS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>';
-function stickExtras(f) { return [f.show, f.tag, f.easy, f.mp, f.great, onHandheld() && f.deckgreat, f.hideEnded, S.settings.hide_ai].filter(Boolean).length; }
+function stickExtras(f) { return [f.show, f.tag, srcOpts().length && f.src, f.easy, f.mp, f.great, onHandheld() && f.deckgreat, f.hideEnded, S.settings.hide_ai].filter(Boolean).length; }
 function paintStick() {
   let b = document.getElementById('dstick');
   if (S.view !== 'discover' || !S.cat || !$('#dlist')) {
@@ -2382,11 +2389,11 @@ function paintStick() {
     b.dataset.lang = curLang();
   }
   const f = S.find, genres = discGenres();
-  const key = JSON.stringify([curLang(), f, !!S.settings.hide_ai, runsPick(), (S.cat.origins || []).length, genres, allTags().length, S.os]);
+  const key = JSON.stringify([curLang(), f, !!S.settings.hide_ai, runsPick(), (S.cat.origins || []).length, genres, allTags().length, S.os, srcOpts()]);
   if (b.dataset.k !== key) {
     b.dataset.k = key;
     $('.ds-ctl', b).innerHTML = pillSel(t('Sort'), 'sort-sel', sortOpts(), f.sort) + originSel(f) + genreSel(f, genres, 'ds-wide');
-    $('.ds-panel', b).innerHTML = `<div class="ds-list">${genreSel(f, genres, 'ds-narrow')}${showSel(f)}${runsSel()}${tagSel(f)}</div><div class="ds-list">${discToggles(f)}</div>`;
+    $('.ds-panel', b).innerHTML = `<div class="ds-list">${genreSel(f, genres, 'ds-narrow')}${showSel(f)}${runsSel()}${tagSel(f)}${srcSel(f)}</div><div class="ds-list">${discToggles(f)}</div>`;
     const n = stickExtras(f), nb = $('.ds-n', b);
     nb.hidden = !n; nb.textContent = n ? fmtNum(n) : '';
     if (window.syncDrops) window.syncDrops();
@@ -2472,7 +2479,7 @@ function discoverGrid() {
   const shown = Math.min(S.dshow || DISCOVER_PAGE, list.length);
   const endedBox = f.hideEnded ? endedBoxHtml(discoverList(true)) : '';
   return list.length ? `<div class="count-line">${esc(byGame() ? tn(S.findCount || list.length, '1 game', '{n} games') : tn(S.findCount || list.length, '1 recomp', '{n} recomps'))}</div>${protonNote}<div class="grid${byGame() ? ' by-game' : ''}" data-n="${list.length}" style="margin-top:20px">${list.slice(0, shown).map(discTile).join('')}</div>${shown < list.length ? '<div class="more" aria-hidden="true"></div>' : ''}${endedBox}`
-    : `<div class="empty"><h2>${esc(t('Nothing here'))}</h2><p>${esc(f.great ? t('Nothing here has enough player reviews yet. Turn off “Plays great” to see the rest.') : f.deckgreat && onHandheld() ? t('No recomps match. Turn off “Great on Deck” to see the rest.') : f.easy ? t('No Easy Setup recomps match. Turn off “Easy Setup” to see the rest.') : f.mp ? t('No multiplayer recomps match. Turn off “Multiplayer” to see the rest.') : t('Try another search, console or genre.'))}</p>${protonNote}</div>${endedBox}`;
+    : `<div class="empty"><h2>${esc(t('Nothing here'))}</h2><p>${esc(f.great ? t('Nothing here has enough player reviews yet. Turn off “Plays great” to see the rest.') : f.deckgreat && onHandheld() ? t('No recomps match. Turn off “Great on Deck” to see the rest.') : f.easy ? t('No Easy Setup recomps match. Turn off “Easy Setup” to see the rest.') : f.mp ? t('No multiplayer recomps match. Turn off “Multiplayer” to see the rest.') : t('Try another search, console or genre.'))}</p>${protonNote}<p class="muted">${esc(t('Not in the Catalog? Add it to your Library by its project\'s link.'))}</p><div class="acts"><button type="button" class="btn" data-act="gh-add">${BRANCH_S}${esc(t('Add a Recomp'))}</button></div></div>${endedBox}`;
 }
 // The optional line under a tile's name: the latest release in Discover, the installed one in the Library.
 const showVer = () => !!(S.settings.ui || {}).show_versions;
@@ -2563,7 +2570,7 @@ function pageLibrary() {
   if (!total) {
     return `<div class="page"><div class="head"><div><h1>${esc(t('Library'))}</h1><p>${esc(t('Your recomps, kept up to date from each developer\'s own GitHub.'))}</p></div></div>
       <div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg>
-      <h2>${esc(t('Nothing installed yet'))}</h2><p>${esc(t('Pick a recomp in the Catalog and install it. It shows up here, ready to play.'))}</p><div class="acts"><button type="button" class="btn" data-act="adopt">${esc(t('Bring Your Recomps'))}</button><button type="button" class="btn main" data-go="discover">${esc(t('Browse the Catalog'))}</button>${devOn() ? `<button type="button" class="btn" data-act="dev-add">${esc(t('Add a local build'))}</button>` : ''}</div></div></div>`;
+      <h2>${esc(t('Nothing installed yet'))}</h2><p>${esc(t('Pick a recomp in the Catalog and install it. It shows up here, ready to play.'))}</p><div class="acts"><button type="button" class="btn" data-act="adopt">${esc(t('Bring Your Recomps'))}</button><button type="button" class="btn" data-act="gh-add">${BRANCH_S}${esc(t('Add a Recomp'))}</button><button type="button" class="btn main" data-go="discover">${esc(t('Browse the Catalog'))}</button>${devOn() ? `<button type="button" class="btn" data-act="dev-add">${esc(t('Add a local build'))}</button>` : ''}</div></div></div>`;
   }
   const n = Object.keys(S.updates).filter((id) => S.library[id]).length;
   const setup = libRecs().filter(needsCopySetup).length;
@@ -6160,7 +6167,7 @@ function updateDiscover() {
   if (ai) ai.setAttribute('aria-checked', String(!!S.settings.hide_ai));
   const h = $('.dhead h1');
   if (h) h.textContent = S.q.trim() ? t('Search') : f.genre ? t(GENRES[f.genre]) : t('Catalog');
-  const vals = { origin: f.origin || '', 'genre-sel': f.genre || '', 'show-sel': f.show || '' };
+  const vals = { origin: f.origin || '', 'genre-sel': f.genre || '', 'show-sel': f.show || '', 'src-sel': f.src || '' };
   for (const sl of $$('#main .dctl select[data-act]')) if (sl.dataset.act in vals && sl.value !== vals[sl.dataset.act]) sl.value = vals[sl.dataset.act];
   if (window.syncDrops) window.syncDrops();
   const hadEnded = !!$('#dlist .ended-box');
@@ -9390,7 +9397,13 @@ function githubModal() {
     try {
       const r = await invoke('github_lookup', { link, sgdbKey: (S.settings.ui || {}).sgdb_key || null });
       close();
-      if (r.known) { toast(tf('{name} is already in the Catalog. Here it is.', { name: r.known.name })); return go('game', r.known.id); }
+      // Already in the Catalog: it goes in the Library (to install whenever they like) and its page opens.
+      if (r.known) {
+        const kid = r.known.id, had = !!S.library[kid] || isSaved(kid);
+        if (!had) await saveUi({ saved: Object.assign({}, saved(), { [kid]: Math.floor(Date.now() / 1000) }) }, true);
+        toast(had ? tf('{name} is already in your Library. Here it is.', { name: r.known.name }) : tf('{name} is in the Catalog, and now in your Library too.', { name: r.known.name }));
+        return go('game', kid);
+      }
       gameInfoModal({ link, info: r });
     } catch (e) {
       err.textContent = t(String(e && e.message ? e.message : e)); err.hidden = false;
@@ -10450,6 +10463,7 @@ document.addEventListener('change', (e) => {
   if (s.dataset.act === 'genre-sel') { S.find.genre = s.value; return updateDiscover(); }
   if (s.dataset.act === 'tag-sel') { S.find.tag = s.value; return render(true); }
   if (s.dataset.act === 'show-sel') { S.find.show = s.value; return updateDiscover(); }
+  if (s.dataset.act === 'src-sel') { S.find.src = s.value; return updateDiscover(); }
   if (s.dataset.act === 'runs-sel') { setRuns(s.value).then(() => updateDiscover()); return; }
   if (s.dataset.act === 'libsort') { S.lib.sort = s.value; saveUi({ lib_sort: s.value }, true).catch(() => {}); return updateLibrary(); }
   if (s.dataset.act === 'liborigin') { S.lib.origin = s.value; return updateLibrary(); }
