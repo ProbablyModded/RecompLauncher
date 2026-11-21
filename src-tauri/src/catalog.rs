@@ -269,6 +269,7 @@ pub fn with_mine(dir: &Path, mut cat: Value) -> Value {
     crate::boot::from_catalog(&mut cat);
     let list = mine(dir);
     if list.is_empty() {
+        let cat = crate::game_info::with_own_info(dir, crate::quiver::with_quiver(dir, cat));
         return with_repo_profiles(dir, with_known_project_status(dir, cat));
     }
     if !cat.is_object() {
@@ -284,6 +285,9 @@ pub fn with_mine(dir: &Path, mut cat: Value) -> Value {
             apps.push(e);
         }
     }
+    // Fork: the games imported from Quiver Launcher's catalog come last (quiver.rs).
+    // Then the player's own details for any game (game_info.rs), over everything else.
+    let cat = crate::game_info::with_own_info(dir, crate::quiver::with_quiver(dir, cat));
     with_repo_profiles(dir, with_known_project_status(dir, cat))
 }
 
