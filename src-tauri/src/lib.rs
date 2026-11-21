@@ -4924,8 +4924,8 @@ async fn github_lookup(st: State<'_, App>, link: String, sgdb_key: Option<String
     let repo = repo_of_link(&st, &link).await?;
     let cat = catalog::catalog(&st.http, &st.dir, false).await?.data;
     let apps = cat.get("apps").and_then(Value::as_array).cloned().unwrap_or_default();
-    if let Some(a) = apps.iter().find(|a| str_of(a, "repo").eq_ignore_ascii_case(&repo)) {
-        return Ok(json!({"repo": repo, "known": {"id": str_of(a, "id"), "name": str_of(a, "name")}}));
+    if let Some(a) = apps.iter().find(|a| str_of(a, "repo").eq_ignore_ascii_case(&repo)).cloned().or_else(|| quiver::by_repo(&st.dir, &repo)) {
+        return Ok(json!({"repo": repo, "known": {"id": str_of(&a, "id"), "name": str_of(&a, "name")}}));
     }
     let os = github_os(&st, &repo).await?;
     // A GitLab or SourceForge project: only its releases are read (through the site), so its name
@@ -5065,8 +5065,8 @@ async fn add_github(app: AppHandle, st: State<'_, App>, link: String, info: Opti
     let repo = repo_of_link(&st, &link).await?;
     let cat = catalog::catalog(&st.http, &st.dir, false).await?.data;
     let same = |a: &Value| str_of(a, "repo").eq_ignore_ascii_case(&repo);
-    if let Some(a) = cat.get("apps").and_then(Value::as_array).and_then(|l| l.iter().find(|a| same(a))) {
-        return Ok(json!({"id": str_of(a, "id"), "known": true, "name": str_of(a, "name")}));
+    if let Some(a) = cat.get("apps").and_then(Value::as_array).and_then(|l| l.iter().find(|a| same(a))).cloned().or_else(|| quiver::by_repo(&st.dir, &repo)) {
+        return Ok(json!({"id": str_of(&a, "id"), "known": true, "name": str_of(&a, "name")}));
     }
     let os = github_os(&st, &repo).await?;
     let rels: Vec<Release> = serde_json::from_value(catalog::releases(&st.http, &st.dir, &repo, false).await?.data).unwrap_or_default();

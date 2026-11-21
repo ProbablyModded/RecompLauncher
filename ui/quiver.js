@@ -40,6 +40,9 @@ window.importGroup = quiverGroup;
 // Shown in the Catalog unless RecompLauncher's own catalog has it now (superseded_by), or the
 // player turned Quiver games off.
 window.importShown = (a) => !a.quiver || (!a.superseded_by && !(S.settings.ui || {}).quiver_hide);
+// The Catalog's Source filter: Quiver once some of its games are showing.
+window.importSources = () => ((S.settings.ui || {}).quiver_hide || !((S.cat && S.cat.apps) || []).some((a) => a.quiver && !a.superseded_by) ? [] : [['quiver', 'Quiver']]);
+window.importFrom = (a) => (a && a.quiver ? 'quiver' : '');
 window.importBadge = (a) => (a.quiver ? `<span class="q-badge" title="${esc(t('From Quiver Launcher\'s Catalog'))}">Quiver</span> ` : '');
 window.importCard = (a) => {
   if (!a.quiver) return '';
