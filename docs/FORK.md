@@ -26,6 +26,16 @@ This repository is a fork of [elripalda/RecompLauncher](https://github.com/elrip
   for installed games, designed by drag and drop with a live preview, with presets, per-field
   fallbacks for metadata the catalog doesn't have, and Reorganize Existing Folders (journaled, with
   Undo). `src-tauri/src/folders.rs`, `folders_move.rs`, `ui/folders.js`.
+- **Quiver Catalog Sync** (docs/QUIVER-SYNC.md, Settings → Games and folders → Quiver Catalog):
+  adds the games Quiver Launcher's public catalog lists that RecompLauncher's catalog doesn't,
+  matched by repository (never by title), and fills in details RecompLauncher's own entries leave
+  empty. When RecompLauncher's catalog later lists one, the player's copy moves over to it.
+  `src-tauri/src/quiver.rs`, `merge_quiver` in `lib.rs`, `ui/quiver.js`.
+- **Custom games, with all their details** (docs/QUIVER-SYNC.md): Add a Recomp's details form also
+  takes developer, genre, first release, website, tags, description, the player's notes and the
+  release file to download, and keeps a snapshot of what the project said about itself the day it
+  was added. **Edit Game Info…** works on every game too: changes are kept in `game-info.json`
+  and win over the catalog (`src-tauri/src/game_info.rs`).
 - **The upstream sync** (`.github/workflows/fork-sync.yml`) and this page.
 
 Anything upstream already merged (the Auto-Install setting, for one) isn't carried here.

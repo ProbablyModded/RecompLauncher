@@ -631,7 +631,9 @@ function fitTitles(root = document) {
 // ---------- the catalog ----------
 const all = () => (S.cat ? S.cat.apps : []);
 // Discover and Home list the catalog's recomps; ones the player added by link live in their Library.
-const visible = () => { const hid = hiddenSet(); return all().filter((a) => !a.custom && !(S.settings.hide_ai && isAI(a)) && !hid.has(a.id)); };
+// Fork: games imported from another catalog (Settings → Games and folders) can be left out of the Catalog.
+const importShown = (a) => !window.importShown || window.importShown(a);
+const visible = () => { const hid = hiddenSet(); return all().filter((a) => !a.custom && importShown(a) && !(S.settings.hide_ai && isAI(a)) && !hid.has(a.id)); };
 // Games the player hid from Discover and Home (a game's versions all go together). Their Library
 // entries and pages stay; Settings → Discover shows them again.
 const HID = { src: null, set: new Set() };
@@ -1149,7 +1151,7 @@ function tile(a, opts = {}) {
   // With the setting on every tile keeps the line, empty when there's no version, so names in a row stay level.
   const ver = opts.ver != null ? `<span class="s tver"><span>${opts.ver ? esc(verText(opts.ver)) : '&nbsp;'}</span></span>` : '';
   return `<div class="tile${opts.on ? ' on' : ''}" data-id="${esc(a.id)}">${cov ? `<span class="glow" style="background-image:url('${cssUrl(cov)}')"></span>` : ''}
-    <button type="button" class="tile-b" data-act="${opts.act || 'open'}" data-id="${esc(a.id)}" aria-label="${esc(a.name)}">${poster(a, opts.mine, opts.inst, opts.wide, opts.w, opts.rank)}${vt ? '<span class="trow">' : ''}<span class="t"${shortName(a.name) !== a.name ? ` data-short="${esc(shortName(a.name))}" data-full="${esc(a.name)}"` : ''} title="${esc(a.name)}">${esc(a.name)}</span>${vt ? `${TICK(15)}</span>` : ''}${ver}<span class="s">${sub}${opts.wide ? '' : osMarks(a)}</span></button>
+    <button type="button" class="tile-b" data-act="${opts.act || 'open'}" data-id="${esc(a.id)}" aria-label="${esc(a.name)}">${poster(a, opts.mine, opts.inst, opts.wide, opts.w, opts.rank)}${vt ? '<span class="trow">' : ''}<span class="t"${shortName(a.name) !== a.name ? ` data-short="${esc(shortName(a.name))}" data-full="${esc(a.name)}"` : ''} title="${esc(a.name)}">${esc(a.name)}</span>${vt ? `${TICK(15)}</span>` : ''}${ver}<span class="s">${globalThis.importBadge ? globalThis.importBadge(a) : ''}${sub}${opts.wide ? '' : osMarks(a)}</span></button>
     ${quick ? `<span class="qpw"><button type="button" class="qp" data-act="${S.running.has(a.id) ? 'resume' : 'play'}" data-id="${esc(a.id)}" aria-label="${esc(tf('Play {name}', { name: a.name }))}" title="${esc(t('Play'))}">${PLAY}</button></span>` : ''}${qadd ? `<span class="qpw"><button type="button" class="qp${qsaved ? '' : ' add'}" data-act="${qsaved ? 'install' : 'addlib'}" data-id="${esc(a.id)}" aria-label="${esc(qsaved ? tf('Install {name}', { name: a.name }) : tf('Add {name} to your Library', { name: a.name }))}" title="${esc(qsaved ? t('Install') : t('Add to Library'))}">${qsaved ? DOWN : PLUS}</button></span>` : ''}</div>`;
 }
 
@@ -1618,6 +1620,29 @@ function devShotView(id, i) {
 }
 // The player's own words about a game (Customize, Info): on its page, above everything about it.
 const ownAbout = (id) => { const ab = (S.settings.ui || {}).abouts || {}; return String(ab[id] || ab[gameKey(byId(id))] || '').trim(); };
+// Fork: where a game the launcher's own catalog doesn't list came from. One imported from another
+// catalog says so (its own file); one the player added keeps their notes and what its project said
+// about itself the day it was added.
+function sourceCard(a) {
+  const imported = window.importCard ? window.importCard(a) : '';
+  if (imported) return imported;
+  // A catalog game the player wrote notes or a website for (Edit Game Info).
+  if (!a.custom && (a.notes || (a.website && (a.edited || []).includes('website')))) {
+    const site = a.website ? `<dl class="src-facts"><dt>${esc(t('Website'))}</dt><dd><a href="#" data-act="url" data-url="${esc(a.website)}">${esc(a.website)}</a></dd></dl>` : '';
+    return `<div class="card src-card"><div class="card-h" style="margin-bottom:8px"><h3>${esc(t('Your Notes'))}</h3><button type="button" class="btn sm" data-act="edit-info" data-id="${esc(a.id)}">${esc(t('Edit'))}</button></div>${a.notes ? `<div class="md" style="margin-bottom:8px">${md(a.notes)}</div>` : ''}${site}</div>`;
+  }
+  if (!a.custom || !(a.notes || a.snapshot || a.website)) return '';
+  const sn = a.snapshot || {}, rows = [];
+  if (a.website) rows.push([t('Website'), `<a href="#" data-act="url" data-url="${esc(a.website)}">${esc(a.website)}</a>`]);
+  if (sn.url) rows.push([t('Project'), `<a href="#" data-act="url" data-url="${esc(sn.url)}">${esc(sn.url)}</a>`]);
+  if (sn.taken) rows.push([t('Added'), esc(new Date(sn.taken * 1000).toLocaleDateString(curLocale()))]);
+  if (sn.newest_release && sn.newest_release.tag) rows.push([t('Newest Release Then'), esc(sn.newest_release.tag + (sn.newest_release.published_at ? ' · ' + String(sn.newest_release.published_at).slice(0, 10) : ''))]);
+  if (sn.license) rows.push([t('License'), esc(sn.license)]);
+  if (sn.stars != null) rows.push([t('Stars Then'), esc(fmtNum(sn.stars))]);
+  return `<div class="card src-card"><h3 style="margin-bottom:8px">${esc(t('Your Game'))}</h3>
+    ${a.notes ? `<div class="md" style="margin-bottom:8px">${md(a.notes)}</div>` : ''}
+    ${rows.length ? `<dl class="src-facts">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>` : ''}</div>`;
+}
 function ownAboutCard(id) {
   const txt = ownAbout(id);
   if (!txt) return '';
@@ -2743,6 +2768,7 @@ function gameBody(a) {
       ${window.betaCard ? window.betaCard(a) : ''}
       ${a.blurb ? `<p class="blurb">${esc(a.blurb)}</p>` : ''}
       ${ownAboutCard(id)}
+      ${sourceCard(a)}
       ${protonHiddenNote(a, 'vc-solo')}
       ${feats.length ? `<div class="feat">${feats.map((ft) => `<span>${esc(ft)}</span>`).join('')}</div>` : ''}
       ${aboutCard(a)}
@@ -4671,6 +4697,7 @@ function pageSettings() {
         + group(t('Installing'), row(t('Ask Where to Install'), t('Pick the folder for each new game when you install it, Easy Install too. Off: new games go to the default library.'), sw('ask_where', ui.ask_where, t('Ask Where to Install'), 'ui-toggle'))
           + row(t('Skip Easy Setup'), t('Every game installs as it comes, and its own installer or launcher sets it up. To skip it for one game only, use Skip Easy Setup on its setup window, or the Easy Setup switch in its Manage tab.'), sw('easy_skip_all', ui.easy_skip_all, t('Skip Easy Setup'), 'ui-toggle')))
         + (typeof folderStructureGroup === 'function' ? folderStructureGroup(group, row, sw) : '')
+        + (window.importGroup ? window.importGroup(group, row, sw) : '')
         + group(t('Where do you keep your ROMs?'), `<p class="set-note">${esc(t('Point the launcher at your ROMs, disc images and game backups. It shows which have recomps, sets them up with your copy, and lets you know when a new recomp comes out for one. Files are only read on this PC.'))}</p>
         ${(st.rom_dirs || []).length ? (st.rom_dirs || []).map((d) => `<div class="set-row"><div class="k"><b class="path">${esc(d)}</b><span>${esc(folderCounts(d))}</span></div><div class="acts"><button type="button" class="btn sm" data-act="folder" data-path="${esc(d)}">${esc(t('Open'))}</button><button type="button" class="btn sm danger" data-act="rom-remove" data-path="${esc(d)}">${esc(t('Remove'))}</button></div></div>`).join('') : `<p class="set-empty">${esc(t('No folders yet.'))}</p>`}
         ${nOwned ? `<p class="set-foot">${esc(tn(nOwned, '1 of your games has a recomp.', '{n} of your games have recomps.'))} <a href="#" data-go="home">${esc(t('See them on Home'))}</a></p>` : ''}`,
@@ -6385,10 +6412,10 @@ function gameMenu(id) {
     ...(!g && isSaved(id) ? [{ act: 'unsave', id, label: t('Remove from Library'), icon: 'bin' }] : []),
     ...(x && !x.custom ? [isHidden(id) ? { act: 'unhide', id, label: t('Show in Catalog'), icon: 'hide' } : { act: 'hide', id, label: t('Hide from Catalog'), icon: 'hide' }] : []),
     // Its own pictures and words before it's installed too (they stay when it is).
-    ...(!g && x ? [{ act: 'customize', id, label: t('Edit Name and Artwork…'), icon: 'shot' }] : []),
+    ...(!g && x ? [{ act: 'customize', id, label: t('Edit Name and Artwork…'), icon: 'shot' }, { act: 'edit-info', id, label: t('Edit Game Info…'), icon: 'page' }] : []),
     ...(g ? ['-',
       { act: 'customize', id, label: t('Edit Name and Artwork…'), icon: 'shot' },
-      ...(x && x.custom ? [{ act: 'edit-info', id, label: t('Edit Game Info…'), icon: 'page' }] : []),
+      ...(x ? [{ act: 'edit-info', id, label: t('Edit Game Info…'), icon: 'page' }] : []),
       ...(canSetUpAgain(id) ? [{ act: 'setup', id, label: t('Setup Options…'), icon: 'disc', dot: newOpts }] : []),
       { label: t('Add To'), icon: 'plus', sub: [
         // Not on a Mac: the shortcut the launcher makes is Linux's .desktop file, which a Mac ignores.
@@ -8453,6 +8480,12 @@ function gameFinder(key, { consoles = true, sgdbOnly = false } = {}) {
 function gameInfoModal({ link, info, id }) {
   const key = (S.settings.ui || {}).sgdb_key || '';
   const cur = { name: info.name || '', game: info.game || '', origin: info.origin || '', cover: info.cover || '', hero: info.hero || '', logo: info.logo || '' };
+  // Fork (custom games): the rest of a catalog entry's details, filled in from the project where it
+  // says, and the release file to download on this system (empty: the launcher picks it).
+  const more = { author: info.author || '', genre: info.genre || '', first: info.first || '', tags: Array.isArray(info.tags) ? info.tags.join(', ') : String(info.tags || ''),
+    blurb: info.blurb || info.desc || '', website: info.website || '', notes: info.notes || '', pattern: ((info.assets || {})[S.os]) || '' };
+  const genres = [...new Set(((S.cat && S.cat.apps) || []).map((a) => String(a.genre || '').trim()).filter(Boolean))].sort();
+  if (more.genre && !genres.includes(more.genre)) genres.push(more.genre);
   // Pictures from this PC picked here, by kind: { src, data }. They're kept with the game.
   const own = {};
   const art = { covers: [], heroes: [], logos: [] };
@@ -8477,10 +8510,23 @@ function gameInfoModal({ link, info, id }) {
       </div></div>
     <div class="gi-hero" id="gi-hero" aria-label="${esc(t('Background'))}" data-x="choose" title="${esc(t('Choose Art…'))}"><div class="gi-heroimg" id="gi-heroimg"></div><div class="gi-logo" id="gi-logo"></div></div>
     <p class="muted gi-hint" id="gi-status">${esc(hint)}</p>
+    <details class="gi-more" open><summary>${esc(t('More Details'))}</summary><div class="gi-fields gi-grid">
+      <label><span>${esc(t('Developer'))}</span><input class="field" id="gi-author" value="${esc(more.author)}" maxlength="120" spellcheck="false"></label>
+      <label><span>${esc(t('Genre'))}</span><select class="field sel" id="gi-genre" aria-label="${esc(t('Genre'))}"><option value="">${esc(t('Not sure'))}</option>${genres.map((g) => `<option value="${esc(g)}"${g === more.genre ? ' selected' : ''}>${esc(g.charAt(0).toUpperCase() + g.slice(1))}</option>`).join('')}</select></label>
+      <label><span>${esc(t('First Released'))}</span><input class="field" id="gi-first" value="${esc(more.first)}" maxlength="10" placeholder="2025-05-10" spellcheck="false"></label>
+      <label><span>${esc(t('Website'))}</span><input class="field" id="gi-website" type="url" value="${esc(more.website)}" maxlength="300" placeholder="https://..." spellcheck="false"></label>
+      <label class="gi-wide"><span>${esc(t('Tags'))}</span><input class="field" id="gi-tags" value="${esc(more.tags)}" maxlength="400" placeholder="${esc(t('Widescreen, High FPS, Mods'))}" spellcheck="false"></label>
+      <label class="gi-wide"><span>${esc(t('Description'))}</span><textarea class="field" id="gi-blurb" rows="3" maxlength="4000">${esc(more.blurb)}</textarea></label>
+      <label class="gi-wide"><span>${esc(t('Your Notes'))}</span><textarea class="field" id="gi-notes" rows="2" maxlength="4000">${esc(more.notes)}</textarea></label>
+      <label class="gi-wide"><span>${esc(tf('Release File for {os}', { os: OS_NAME[S.os] || S.os }))}</span><input class="field" id="gi-pattern" value="${esc(more.pattern)}" maxlength="200" placeholder="${esc(t('Leave empty to pick it automatically, or a name like Game-*-Windows.zip'))}" spellcheck="false"></label>
+    </div></details>
     <p class="err" id="gi-err" hidden>${esc(info.art_error || '')}</p>
     <div class="acts grid3"><button type="button" class="btn" data-x="no">${esc(t('Cancel'))}</button><button type="button" class="btn" data-x="choose">${esc(t('Choose Art…'))}</button><button type="button" class="btn main" data-x="yes">${esc(link ? t('Add to Library') : t('Save'))}</button></div>`, async (x, close) => {
     const err = $('#gi-err', m);
-    const read = () => { cur.name = $('#gi-name', m).value.trim(); cur.game = $('#gi-game', m).value.trim(); cur.origin = $('#gi-origin', m).value; };
+    const read = () => {
+      cur.name = $('#gi-name', m).value.trim(); cur.game = $('#gi-game', m).value.trim(); cur.origin = $('#gi-origin', m).value;
+      for (const k of ['author', 'genre', 'first', 'tags', 'blurb', 'website', 'notes', 'pattern']) more[k] = String($('#gi-' + k, m).value || '').trim();
+    };
     switch (x.dataset.x) {
       case 'similar': close(); return go('game', info.similar.id);
       case 'choose': return artPicker(art, cur, own, { id: id || null, key, game: () => ($('#gi-game', m).value.trim() || $('#gi-name', m).value.trim()) }, () => paint());
@@ -8490,7 +8536,9 @@ function gameInfoModal({ link, info, id }) {
         x.disabled = true;
         // The player's own pictures aren't web addresses: they're kept for the game once it's in.
         const mine = Object.keys(own).filter((k) => own[k] && cur[k] === own[k].data);
-        const sent = Object.assign({}, cur);
+        if (more.website && !/^https:\/\//i.test(more.website)) { err.textContent = t('The website needs to start with https://'); err.hidden = false; x.disabled = false; return $('#gi-website', m).focus(); }
+        const { pattern, ...details } = more;
+        const sent = Object.assign({}, cur, details, { assets: Object.assign({}, info.assets || {}, { [S.os]: pattern }) });
         for (const k of mine) sent[k] = '';
         try {
           let gid = id;
@@ -8934,12 +8982,69 @@ function artPicker(shared, cur, own, opt, done) {
   draw();
 }
 
+// Fork: Edit Game Info for a game the catalog lists (RecompLauncher's own, or one imported from
+// another catalog). What the player changes is kept apart from the catalog (set_game_info,
+// game_info.rs) and wins over it; a field left empty shows the catalog's value again, and Reset
+// takes every change off. Name and art stay with Customize.
+function gameDetailsModal(a) {
+  const id = a.id, was = a.catalog_info || {}, edited = new Set(a.edited || []);
+  const cur = { game: a.game || '', origin: a.origin || '', author: a.author || '', genre: a.genre || '', first: a.first || '', tags: Array.isArray(a.tags) ? a.tags.join(', ') : String(a.tags || ''), blurb: a.blurb || '', website: a.website || '', notes: a.notes || '' };
+  const genres = [...new Set(((S.cat && S.cat.apps) || []).map((x) => String(x.genre || '').trim()).filter(Boolean))].sort();
+  if (cur.genre && !genres.includes(cur.genre)) genres.push(cur.genre);
+  // Under a changed field: what the catalog says, so the player can see what they replaced.
+  const orig = (k) => {
+    if (!edited.has(k)) return '';
+    const v = Array.isArray(was[k]) ? was[k].join(', ') : String(was[k] == null ? '' : was[k]);
+    const shown = k === 'origin' ? originName(v) : v;
+    return `<small class="gd-was">${esc(shown ? tf('Catalog: {value}', { value: shown.length > 80 ? shown.slice(0, 80) + '…' : shown }) : t('Catalog: empty'))}</small>`;
+  };
+  const field = (k, label, html, wide) => `<label${wide ? ' class="gi-wide"' : ''}><span>${esc(label)}${edited.has(k) ? ` <b class="gd-mark">${esc(t('Changed'))}</b>` : ''}</span>${html}${orig(k)}</label>`;
+  const inp = (k, extra = '') => `<input class="field" id="gd-${k}" value="${esc(cur[k])}" spellcheck="false" ${extra}>`;
+  const m = modal(`<h2>${esc(t('Edit Game Info'))}</h2>
+    <p class="muted">${esc(tf('Your changes to {name} are kept apart from the catalog and win over it, even when the catalog updates. Leave a field empty to use the catalog\'s again.', { name: a.name }))}</p>
+    <div class="gi-fields gi-grid">
+      ${field('game', t('Game'), inp('game', 'maxlength="120"'))}
+      ${field('origin', t('Console'), `<select class="field sel" id="gd-origin" aria-label="${esc(t('Console'))}">${consoleOptions(cur.origin)}</select>`)}
+      ${field('author', t('Developer'), inp('author', 'maxlength="120"'))}
+      ${field('genre', t('Genre'), `<select class="field sel" id="gd-genre" aria-label="${esc(t('Genre'))}"><option value="">${esc(t('Not sure'))}</option>${genres.map((g) => `<option value="${esc(g)}"${g === cur.genre ? ' selected' : ''}>${esc(g.charAt(0).toUpperCase() + g.slice(1))}</option>`).join('')}</select>`)}
+      ${field('first', t('First Released'), inp('first', 'maxlength="10" placeholder="2025-05-10"'))}
+      ${field('website', t('Website'), inp('website', 'type="url" maxlength="300" placeholder="https://..."'))}
+      ${field('tags', t('Tags'), inp('tags', 'maxlength="400"'), true)}
+      ${field('blurb', t('Description'), `<textarea class="field" id="gd-blurb" rows="3" maxlength="4000">${esc(cur.blurb)}</textarea>`, true)}
+      ${field('notes', t('Your Notes'), `<textarea class="field" id="gd-notes" rows="2" maxlength="4000">${esc(cur.notes)}</textarea>`, true)}
+    </div>
+    <p class="err" id="gd-err" hidden></p>
+    <div class="acts grid3"><button type="button" class="btn" data-x="no">${esc(t('Cancel'))}</button><button type="button" class="btn" data-x="reset"${edited.size ? '' : ' disabled'}>${esc(t('Reset to Catalog'))}</button><button type="button" class="btn main" data-x="yes">${esc(t('Save'))}</button></div>`, async (x, close) => {
+    const err = $('#gd-err', m);
+    if (x.dataset.x !== 'yes' && x.dataset.x !== 'reset') return;
+    const info = {};
+    for (const k of Object.keys(cur)) info[k] = String($('#gd-' + k, m).value || '').trim();
+    if (x.dataset.x === 'yes' && info.website && !/^https:\/\//i.test(info.website)) { err.textContent = t('The website needs to start with https://'); err.hidden = false; return $('#gd-website', m).focus(); }
+    // Only what differs from the catalog is kept: a field the player didn't change stays the catalog's.
+    for (const k of Object.keys(info)) {
+      const base = edited.has(k) ? was[k] : a[k];
+      const same = (Array.isArray(base) ? base.join(', ') : String(base == null ? '' : base)) === info[k];
+      if (same) info[k] = '';
+    }
+    x.disabled = true;
+    try {
+      await invoke('set_game_info', { id, info, reset: x.dataset.x === 'reset' });
+      close();
+      await loadCatalog(false);
+      render(true);
+      toast(x.dataset.x === 'reset' ? t('Back to the catalog\'s details.') : t('Saved.'));
+    } catch (e) { err.textContent = String(e && e.message ? e.message : e); err.hidden = false; x.disabled = false; }
+  }, t('Edit Game Info'));
+  $('#gd-game', m).focus();
+}
 function editInfo(id) {
   const a = byId(id);
-  if (!a || !a.custom) return;
+  if (!a) return;
+  if (!a.custom) return gameDetailsModal(a);
   // The list entry's own values (not the player's pictures or name shown over them).
   const web = (k, u) => (a[k] !== undefined ? a[k] : u);
-  gameInfoModal({ id, info: { name: web('_name', a.name), game: a.game, origin: a.origin, cover: web('_cov', a.cover), hero: web('_hero', a.hero), logo: web('_logo', a.logo) } });
+  gameInfoModal({ id, info: { name: web('_name', a.name), game: a.game, origin: a.origin, cover: web('_cov', a.cover), hero: web('_hero', a.hero), logo: web('_logo', a.logo),
+    author: a.author, genre: a.genre, first: a.first, tags: a.tags, blurb: a.blurb, website: a.website, notes: a.notes, assets: a.assets } });
 }
 function renameModal(id) {
   const a = libApp(S.library[id] || { id, name: id }), names = Object.assign({}, (S.settings.ui || {}).names);
@@ -8982,6 +9087,7 @@ async function act(el, e) {
   if (a === 'adopt' && window.adoptAct) return window.adoptAct(a, el);
   if (/^mig-/.test(a) && window.migrateAct) return window.migrateAct(a, el);
   if (/^fs-/.test(a) && window.foldersAct) return window.foldersAct(a, el);
+  if (/^qv-/.test(a) && window.qvAct) return window.qvAct(a, el);
   switch (a) {
     case 'scan-report': e.preventDefault(); e.stopPropagation(); return invoke('open_url', { url: el.dataset.url }).catch(fail);
     case 'open': e.preventDefault(); closeMenu(); return go('game', id, el.closest('.tile') ? el : null);
