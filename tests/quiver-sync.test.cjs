@@ -63,3 +63,18 @@ test('every catalog game can have its details edited, not only games added by li
   assert.match(modal, /invoke\('set_game_info', \{ id, info, reset: x\.dataset\.x === 'reset' \}\)/);
   assert.match(modal, /Reset to Catalog/);
 });
+
+test('the Catalog has a Source filter once Quiver games are showing', () => {
+  const games = { apps: [{ id: 'n' }, { id: 'qv-a', quiver: {} }] };
+  const c = load();
+  c.S.cat = games;
+  assert.deepEqual(JSON.parse(JSON.stringify(c.importSources())), [['quiver', 'Quiver']]);
+  assert.equal(c.importFrom({ id: 'qv-a', quiver: {} }), 'quiver');
+  assert.equal(c.importFrom({ id: 'n' }), '');
+  const off = load({ quiver_hide: true }); off.S.cat = games;
+  assert.equal(off.importSources().length, 0);
+  const none = load(); none.S.cat = { apps: [{ id: 'n' }, { id: 'qv-b', quiver: {}, superseded_by: 'b' }] };
+  assert.equal(none.importSources().length, 0);
+  assert.match(app, /srcOk\(a, f\.src\)/);
+  assert.match(app, /data-act="gh-add"[^\n]*Add a Recomp[^\n]*data-go="discover"/);
+});

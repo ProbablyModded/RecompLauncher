@@ -79,6 +79,13 @@ pub fn entries(dir: &Path) -> Vec<Value> {
     cached(dir).get("apps").and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
+/// The game imported from Quiver's catalog with this repository, if there is one: Add a Recomp
+/// opens it instead of adding the same project a second time.
+pub fn by_repo(dir: &Path, repo: &str) -> Option<Value> {
+    let k = match_key(repo);
+    entries(dir).into_iter().find(|a| a.get("repo").and_then(Value::as_str).map(match_key).as_deref() == Some(k.as_str()))
+}
+
 pub fn is_quiver(a: &Value) -> bool {
     a.get("quiver").map(Value::is_object).unwrap_or(false)
 }
@@ -792,6 +799,17 @@ mod tests {
         assert_eq!(apps[1]["superseded_by"], "a-native");
         assert!(apps[2].get("superseded_by").is_none());
         assert!(cat["origins"].as_array().unwrap().iter().any(|o| o["id"] == "vita"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn add_a_recomp_finds_a_quiver_game_by_its_repo() {
+        let d = std::env::temp_dir().join(format!("rl-quiver-byrepo-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        save(&d, &json!({ "apps": [{ "id": "qv-a", "repo": "Dev/A", "quiver": {} }, { "id": "qv-c", "repo": "gitlab:grp/c", "quiver": {} }] })).unwrap();
+        assert_eq!(by_repo(&d, "dev/a.git").unwrap()["id"], "qv-a");
+        assert_eq!(by_repo(&d, "gitlab:Grp/C/").unwrap()["id"], "qv-c");
+        assert!(by_repo(&d, "dev/ab").is_none());
         let _ = std::fs::remove_dir_all(&d);
     }
 }
