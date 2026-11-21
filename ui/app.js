@@ -6084,7 +6084,27 @@ function fbKeys(e) {
 }
 
 // ---------- menus and confirmations ----------
-function closeMenu() { $$('.menu').forEach((m) => m.remove()); }
+// The control a menu was opened from (set by menu()): focus goes back to it when the menu closes.
+let MENU_BACK = null;
+// Closing a menu never moves the page. The focused menu row is about to go, and WebView2 (Windows)
+// scrolls #main when the focused element disappears, so the Catalog jumped (often to its top) after
+// Add to Library, Add and Install or any other menu action. Focus goes back to the opener first,
+// without scrolling, and the page's scroll is put back if anything moved it anyway.
+function closeMenu() {
+  const menus = $$('.menu');
+  if (!menus.length) return;
+  const main = $('#main');
+  const top = main ? main.scrollTop : 0;
+  const ae = document.activeElement;
+  const back = MENU_BACK && MENU_BACK.isConnected && !MENU_BACK.closest('.menu') ? MENU_BACK : null;
+  MENU_BACK = null;
+  if (ae && menus.some((m) => m.contains(ae))) {
+    if (back) back.focus({ preventScroll: true });
+    else ae.blur();
+  }
+  menus.forEach((m) => m.remove());
+  if (main && main.scrollTop !== top) main.scrollTop = top;
+}
 const MI = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   play: '<path d="M7 4.8v14.4a.8.8 0 0 0 1.2.7l11.5-7.2a.8.8 0 0 0 0-1.4L8.2 4.1A.8.8 0 0 0 7 4.8z" fill="currentColor" stroke="none"/>',
@@ -6136,13 +6156,15 @@ function menuRows(items) {
     return `<button type="button" role="menuitem" class="${i.cls || ''}" data-act="${i.act}" data-id="${esc(i.id || '')}"${i.k ? ` data-k="${esc(i.k)}"` : ''}${i.url ? ` data-url="${esc(i.url)}"` : ''}${named}>${icon}${esc(i.label)}${i.check ? `<span class="ck">${CHECK}</span>` : ''}${dot}</button>`;
   }).join('');
 }
-function menu(at, items) {
+function menu(at, items, back) {
   // The page's click handler has already closed the menu by the time its button's click gets here,
   // so the button's aria-expanded is what says this click was meant to close it, not reopen it.
   const opener = at instanceof Element ? at : null;
   const wasOpen = !!opener && opener.getAttribute('aria-expanded') === 'true';
   closeMenu();
   if (wasOpen) { opener.setAttribute('aria-expanded', 'false'); return; }
+  // Where focus goes when it closes (closeMenu): its button, or what was right-clicked.
+  MENU_BACK = back || opener;
   const m = document.createElement('div');
   m.className = 'menu';
   m.setAttribute('role', 'menu');
@@ -9502,7 +9524,10 @@ document.addEventListener('contextmenu', (e) => {
   }
   const g = e.target.closest('[data-id]');
   const id = g && g.dataset.id;
-  if (id && (byId(id) || S.library[id])) return menu(at, gameMenu(id));
+  if (id && (byId(id) || S.library[id])) {
+    const back = e.target.closest('button, a, [tabindex]') || g.querySelector('button, a, [tabindex]');
+    return menu(at, gameMenu(id), back);
+  }
   menu(at, [{ act: 'refresh', label: t('Refresh'), icon: 'refresh' }, { act: 'go-settings', label: t('Settings'), icon: 'gear' }, { act: 'about', label: t('About RecompLauncher'), icon: 'info' }]);
 });
 $('#brand').addEventListener('click', () => aboutModal());
