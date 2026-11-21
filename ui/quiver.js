@@ -30,7 +30,7 @@ function quiverGroup(group, row, sw) {
   const syncBtn = `<button type="button" class="btn sm main" data-act="qv-sync"${QV.busy ? ' disabled' : ''}>${esc(QV.busy ? t('Syncing…') : t('Sync Now'))}</button>`;
   const clear = d.count ? `<button type="button" class="btn sm danger" data-act="qv-clear">${esc(t('Remove Them'))}</button>` : '';
   return group(t('Quiver Catalog'), note
-    + row(t('Quiver Games'), esc(qvSummary(d)), `<span class="acts">${clear}${syncBtn}</span>`)
+    + row(t('Quiver Games'), qvSummary(d), `<span class="acts">${clear}${syncBtn}</span>`)
     + row(t('Keep in Sync'), t('Syncs again once a day, in the background.'), sw('qv_auto', !!d.auto, t('Keep in Sync'), 'qv-auto'))
     + row(t('Include Tools and Emulators'), t('Off: only games and ports. On: Quiver\'s tools and emulators too. Takes effect on the next sync.'), sw('qv_tools', !!d.include_tools, t('Include Tools and Emulators'), 'qv-tools'))
     + row(t('Show Quiver Games in the Catalog'), t('Off: they stay out of the Catalog. Ones in your Library stay there either way.'), sw('qv_show', !ui.quiver_hide, t('Show Quiver Games in the Catalog'), 'qv-show')));
@@ -50,10 +50,10 @@ window.importCard = (a) => {
 };
 
 window.qvAct = async (a) => {
-  try { await qvAct(a); } catch (e) { QV.busy = false; fail(e); render(true); }
+  try { await qvRun(a); } catch (e) { QV.busy = false; fail(e); render(true); }
 };
 
-async function qvAct(a) {
+async function qvRun(a) {
   if (a === 'qv-sync') {
     if (QV.busy) return;
     QV.busy = true; render(true);
