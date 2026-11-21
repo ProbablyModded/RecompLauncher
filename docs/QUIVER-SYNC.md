@@ -9,6 +9,11 @@ details, all in this fork only.
 or a Forgejo/Gitea server. Upstream already reads the project, suggests its game, console and art,
 and adds it to the Library; Install downloads from the project's releases like any catalog game.
 
+The button is also on an empty Library and under a Catalog search that finds nothing. A link to a
+project the Catalog already has (RecompLauncher's own entry, or one imported from Quiver, compared by
+repository) isn't added a second time: that entry goes into the Library (Not Installed, to install
+whenever you like) and its page opens.
+
 The fork's details form adds, under **More Details**:
 
 | Field | Saved as | Filled in from the project |
@@ -92,6 +97,13 @@ same files).
 
 Also left out: apps only for phones (no Windows, Linux or Mac build), and tools and emulators
 unless **Include Tools and Emulators** is on.
+
+### The Source filter
+
+Once Quiver games are showing, the Catalog's filters get **Source**: Any, RecompLauncher (its own
+catalog only) or Quiver (only games imported from Quiver). It's in the pinned filter bar's panel too,
+and counts as an active filter there. `app.js` reads it through two generic hooks that `quiver.js`
+sets: `importSources()` (the choices, empty while Quiver games are hidden) and `importFrom(a)`.
 
 ### What an imported game looks like
 
