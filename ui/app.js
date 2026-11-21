@@ -4940,6 +4940,34 @@ function scrollAnchor(main) {
   }
   return first;
 }
+// A redraw in place never moves the page by itself. Two things made the Catalog jump while it was
+// redrawn in the background (a download ticking, a release list coming in, a game added):
+// - The focused control was taken out or moved (a tile's + turning into Install, a tile moving up the
+//   list). WebView2 (Windows) scrolls #main when the focused element leaves the page. So focus waits
+//   on #main itself, without scrolling, while the page changes, and comes back to the same control
+//   (or the same one drawn anew, or its tile) after.
+// - The scroll was written back even when nothing had moved it. Writing it stops a scroll the player
+//   is in the middle of (a wheel or touchpad glide), and after a long redraw it puts the page back
+//   where it was when the redraw began. It's written only when the redraw really moved it.
+const focusSig = (el) => [el.tagName, el.dataset.act || '', el.dataset.id || '', el.getAttribute('aria-label') || ''].join('|');
+function holdFocus(root) {
+  const ae = document.activeElement;
+  if (!root || !ae || ae === root || !root.contains(ae)) return () => {};
+  // A field being typed in keeps its own focus (render puts it back with its caret).
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable) return () => {};
+  const sig = focusSig(ae), tileId = (ae.closest('[data-id]') || {}).dataset?.id || '';
+  root.focus({ preventScroll: true });
+  return () => {
+    // Something else took focus on purpose while the page changed (a dialog, a menu): it keeps it.
+    if (document.activeElement !== root) return;
+    const tileOf = (id) => (id ? $$('.tile[data-id], .dl-row[data-id]', root).find((e) => e.dataset.id === id) : null);
+    const tileBack = tileOf(tileId);
+    const back = (ae.isConnected && root.contains(ae) ? ae : null)
+      || $$('button, a, [tabindex]', root).find((e) => focusSig(e) === sig && (!tileId || e.closest('[data-id]') === tileBack || e.dataset.id === tileId))
+      || (tileBack && $('.tile-b, button', tileBack));
+    if (back) back.focus({ preventScroll: true });
+  };
+}
 function render(keepScroll) {
   // Records set from an answer about one of a recomp's games go back on the recomp, and its games' records follow.
   expandLib();
@@ -4959,8 +4987,9 @@ function render(keepScroll) {
   // Redrawing the same page: whatever was at the top of the view stays there, even when something
   // above it came or went (a row, a badge, a banner).
   const anchor = keepScroll && !S.anim && main.dataset.v === v ? scrollAnchor(main) : null;
+  let focusBack = null;
   if (S.anim || main.dataset.v !== v) main.innerHTML = html;
-  else morph(main, html);
+  else { focusBack = holdFocus(main); morph(main, html); }
   main.dataset.v = v;
   if (S.anim) {
     main.classList.remove('enter', 'enter-game', 'enter-soft', 'enter-back');
@@ -4981,8 +5010,13 @@ function render(keepScroll) {
   fitTitles(main);
   // Back to where it was once the page has its final shape (the grids' columns are set just above:
   // measured before that, a tile is somewhere it won't stay).
-  if (keepScroll) main.scrollTop = top;
-  if (anchor) { const all = anchorsOf(main, anchor.id); const el = anchor.one ? (all.length === 1 ? all[0] : null) : all[anchor.n]; if (el) main.scrollTop += el.getBoundingClientRect().top - anchor.y; }
+  // Written only when the redraw moved it (see holdFocus): a write stops the player's own scroll.
+  if (keepScroll) {
+    let want = top;
+    if (anchor) { const all = anchorsOf(main, anchor.id); const el = anchor.one ? (all.length === 1 ? all[0] : null) : all[anchor.n]; if (el) want += el.getBoundingClientRect().top - anchor.y + (main.scrollTop - top); }
+    if (Math.abs(main.scrollTop - want) >= 1) main.scrollTop = want;
+  }
+  if (focusBack) focusBack();
   moveTabPill();
   stickCheck();
   watchMore();
@@ -5212,6 +5246,11 @@ function glideFrom(before, rel, ms = 300) {
 // elements, so their pictures never reload, and they glide to their new places; new ones fade in.
 // With `opts.exit`, the tiles a filter takes out fade away where they stood while the rest glides over.
 function morphList(box, html, opts = {}) {
+  // Focus waits on the page while tiles go and move (see holdFocus), so the page doesn't jump.
+  const main = box.closest('#main'), focusBack = holdFocus(main);
+  try { morphListIn(box, html, opts); } finally { focusBack(); }
+}
+function morphListIn(box, html, opts) {
   const oldGrid = $('.grid', box);
   const tpl = document.createElement('template');
   tpl.innerHTML = html;
@@ -5528,7 +5567,10 @@ async function loadRels(repo, force) {
     // list can be newer (fetched in the background after the tab opened, or after Refresh), and a
     // release only it has would read "No build for your system": the tab asks again.
     S.updInfo = {};
-    statusChanged = archived !== previous;
+    // Only archived or not counts: "not known yet" and "not archived" look the same on a tile. A release
+    // list asked for because the pointer rested on a tile used to redraw the whole Catalog each time
+    // (nothing was known before, so any answer counted as a change), and the page jumped.
+    statusChanged = (archived === true) !== (previous === true);
   } catch (e) {
     S.rels[repo] = { list: [], error: String(e), archived: previous };
   }
