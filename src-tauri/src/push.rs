@@ -136,6 +136,7 @@ async fn act(app: AppHandle, p: Push) {
                 if !f.offline {
                     crate::note_new_apps(&app, &st, &f.data);
                     let _ = app.emit("catalog-fresh", ());
+                    crate::quiver_with_refresh(&app, false).await;
                 }
             }
         }

@@ -168,6 +168,7 @@ and for imported games (`quiver::Vocab`):
 ### Keeping it current
 
 - **Keep in Sync**: syncs again once a day, in the background, when the catalog is read.
+- **With the Catalog's refresh**: whenever the Catalog is refreshed (Refresh pressed, the list on disk was old, back online, or the site said the list changed), Quiver's catalog is synced too when the sync is on: Keep in Sync is on, or Quiver games are in the Catalog (synced before, and Show Quiver Games in the Catalog is on). Refresh waits for it, so the list it shows already has them; a background refresh skips it when the last sync was under five minutes ago. A failed sync leaves the Catalog as it was and is noted in the log (`quiver_with_refresh` in lib.rs).
 - A game the last sync imported that Quiver no longer lists stays while it's in your Library
   (projects get taken down; Data Hoarder users want them kept). Others go.
 - **Show Quiver Games in the Catalog** off hides them from the Catalog; ones in the Library stay.
