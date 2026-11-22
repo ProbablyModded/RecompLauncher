@@ -2186,6 +2186,8 @@ function revealEnded(head) {
   let last = performance.now();
   const until = last + 700;
   const stop = () => ac.abort();
+  // Opened by the player: the Catalog's scroll lock lets this follow it down (fork, scroll-lock.js).
+  if (typeof userScroll === 'function') userScroll(800);
   for (const ev of ['wheel', 'touchstart', 'keydown', 'pointerdown']) main.addEventListener(ev, stop, { passive: true, signal: ac.signal });
   const step = (now) => {
     if (ac.signal.aborted || !head.isConnected) return ac.abort();
@@ -9794,6 +9796,8 @@ function padFocus(el) {
 // only clips (the top banner's slides, the setup window) would be scrolled too, and its contents
 // left out of place: the banner's slides shifted, the setup window's top cut off.
 function padReveal(el, behavior) {
+  // The highlight moving is the player's own doing: the Catalog's scroll lock lets it scroll (fork, scroll-lock.js).
+  if (typeof userScroll === 'function') userScroll(900);
   const cs = getComputedStyle(el);
   const m = { t: parseFloat(cs.scrollMarginTop) || 0, b: parseFloat(cs.scrollMarginBottom) || 0, l: parseFloat(cs.scrollMarginLeft) || 0, r: parseFloat(cs.scrollMarginRight) || 0 };
   // How far the boxes inside have already been told to move it.
