@@ -2313,6 +2313,39 @@ fn quiver_clear(st: State<'_, App>) -> Res<Value> {
     Ok(quiver_status_of(&file))
 }
 
+/// Fork: Quiver Catalog Sync counts as on when Keep in Sync is on, or when its games are in the
+/// Catalog (synced before and not turned off with Show Quiver Games in the Catalog).
+fn quiver_enabled(st: &App) -> bool {
+    let file = quiver::load(&st.dir);
+    if file.get("auto").and_then(Value::as_bool).unwrap_or(false) {
+        return true;
+    }
+    let has = file.get("apps").and_then(Value::as_array).map(|a| !a.is_empty()).unwrap_or(false);
+    let hidden = st.lib.lock().unwrap().settings.ui.get("quiver_hide").and_then(Value::as_bool).unwrap_or(false);
+    has && !hidden
+}
+
+/// How soon after a sync a background Catalog refresh syncs Quiver's catalog again. Refresh
+/// pressed by the player always does.
+const QUIVER_REFRESH_GAP: u64 = 5 * 60;
+
+/// Fork: the Catalog was refreshed (Refresh pressed, the list on disk was old, back online, or
+/// the site said it changed): Quiver's catalog is synced along with it when the sync is on.
+/// A sync that fails leaves the Catalog as it was; it's noted in the log.
+pub(crate) async fn quiver_with_refresh(app: &AppHandle, player: bool) {
+    let st = app.state::<App>();
+    if !quiver_enabled(&st) || net::offline() {
+        return;
+    }
+    let last = quiver::load(&st.dir).get("synced").and_then(Value::as_u64).unwrap_or(0);
+    if !player && quiver::now().saturating_sub(last) < QUIVER_REFRESH_GAP {
+        return;
+    }
+    if let Err(e) = quiver_sync(app.clone(), None, None).await {
+        trail::note(format!("Quiver Catalog Sync (with the Catalog's refresh): {e}"));
+    }
+}
+
 /// "Keep in Sync": once a day, in the background, when the catalog is read.
 fn quiver_auto(app: &AppHandle) {
     let st = app.state::<App>();
@@ -7736,6 +7769,7 @@ fn back_online(app: &AppHandle) {
             if !f.offline {
                 note_new_apps(&app, &st, &f.data);
                 let _ = app.emit("catalog-fresh", ());
+                quiver_with_refresh(&app, false).await;
             }
         }
         cloud::upload_pending(&app).await;
@@ -7759,6 +7793,7 @@ async fn get_catalog(app: AppHandle, st: State<'_, App>, force: bool) -> Res<cat
                         if !f.offline {
                             note_new_apps(&app, &st, &f.data);
                             let _ = app.emit("catalog-fresh", ());
+                            quiver_with_refresh(&app, false).await;
                         }
                     }
                 });
@@ -7769,6 +7804,13 @@ async fn get_catalog(app: AppHandle, st: State<'_, App>, force: bool) -> Res<cat
     // Refresh, or a game link the list on disk doesn't have yet: asked straight away, resting or
     // not (one question, and the player's own doing).
     let mut f = if force { net::now(catalog::catalog(&st.http, &st.dir, true)).await? } else { catalog::catalog(&st.http, &st.dir, false).await? };
+    // Fork: Refresh syncs Quiver's catalog too when that's on, and the list sent back has its games.
+    if force && !f.offline && quiver_enabled(&st) {
+        quiver_with_refresh(&app, true).await;
+        if let Some((again, _)) = catalog::catalog_now(&st.dir) {
+            f.data = again.data;
+        }
+    }
     merged_mine(&app, &st, &mut f.data);
     refresh_repo_profiles(&app, &st, &f.data, force);
     if !f.offline {
