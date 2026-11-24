@@ -7736,9 +7736,9 @@ function startWithItem(id) {
   const rows = list.map((p, i) => ({ act: 'start-with', id, k: String(i), label: p.replace(/\\/g, '/'), raw: true, icon: 'play', check: isUsualProgram(id, p) }));
   return [{ label: t('Start With'), icon: 'play', sub: rows }, '-'];
 }
-async function openGameMenu(at, id, back) {
+async function openGameMenu(at, id) {
   await loadStartWith(id);
-  return menu(at, gameMenu(id), back);
+  return menu(at, gameMenu(id));
 }
 // Big Picture's Start With (from the game's Options sheet): the same programs, as a list to pick.
 window.startWith = async function startWith(id) {
@@ -10275,7 +10275,8 @@ document.addEventListener('contextmenu', (e) => {
   const id = g && g.dataset.id;
   if (id && (byId(id) || S.library[id])) {
     const back = e.target.closest('button, a, [tabindex]') || g.querySelector('button, a, [tabindex]');
-    return openGameMenu(at, id, back);
+    // Like openGameMenu, with focus going back to what was right-clicked when it closes.
+    return loadStartWith(id).then(() => menu(at, gameMenu(id), back));
   }
   menu(at, [{ act: 'refresh', label: t('Refresh'), icon: 'refresh' }, { act: 'go-settings', label: t('Settings'), icon: 'gear' }, { act: 'about', label: t('About RecompLauncher'), icon: 'info' }]);
 });
