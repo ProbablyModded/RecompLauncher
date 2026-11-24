@@ -2793,7 +2793,7 @@ async fn add_to_steam(st: State<'_, App>, id: String, restart: bool) -> Res<Stri
 /// with `restart` to close and reopen Playnite), "restarted".
 #[tauri::command]
 async fn add_to_playnite(st: State<'_, App>, id: String, restart: bool) -> Res<String> {
-    let p = playnite::find().ok_or_else(|| Error::Msg("Playnite isn't installed on this PC.".into()))?;
+    let p = playnite::find().ok_or_else(|| Error::Msg("RecompLauncher couldn't find Playnite on this PC. Open Playnite, then try Add to Playnite again.".into()))?;
     let g = installed_or_game(&st, &id)?;
     if restart && p.pid.is_some() {
         trail::note(format!("Add to Playnite ({id}): restarting Playnite to load RecompLauncher's add-on"));
