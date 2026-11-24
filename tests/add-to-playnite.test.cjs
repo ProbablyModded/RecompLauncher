@@ -54,10 +54,12 @@ test('Not now leaves Playnite open, and the game goes in later', async () => {
   assert.deepEqual(r.toasts, ['Zelda goes in the next time Playnite starts.']);
 });
 
-test('Add to Playnite sits next to Add to Steam, only when Playnite is on the PC', () => {
-  assert.match(app, /S\.steam \? \[\{ act: 'steam'[^\n]*\n\s*\.\.\.\(S\.playnite \? \[\{ act: 'playnite', id, label: t\('Add to Playnite'\)/);
+test('Add to Playnite sits next to Add to Steam, on every Windows PC', () => {
+  assert.match(app, /S\.steam \? \[\{ act: 'steam'[^\n]*\n\s*\.\.\.\(S\.playnite \|\| S\.os === 'windows' \? \[\{ act: 'playnite', id, label: t\('Add to Playnite'\)/);
+  // The window keeps what the launcher found (missing at first, which hid the item everywhere).
+  assert.match(app, /Object\.assign\(S, \{[^\n]*steam: !!st\.steam, playnite: !!st\.playnite,/);
   assert.match(app, /case 'playnite': return addToPlaynite\(id, false\);/);
-  assert.match(tv, /S\.playnite && window\.addToPlaynite \? \[\{ label: t\('Add to Playnite'\)/);
+  assert.match(tv, /\(S\.playnite \|\| S\.os === 'windows'\) && window\.addToPlaynite \? \[\{ label: t\('Add to Playnite'\)/);
   // One game of several is added under its own id, like Add to Steam.
   assert.match(games, /'add_to_steam', 'add_to_playnite'/);
 });
