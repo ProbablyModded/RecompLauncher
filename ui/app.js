@@ -6358,7 +6358,7 @@ async function refreshState() {
   const st = await invoke('get_state');
   S.removedPlayHistory = st.removedPlayHistory || {};
   if (st.settings) S.settingsMissing = false;
-  Object.assign(S, { os: st.os, arch: st.arch, flatpak: !!st.flatpak, version: st.version, site: st.site, thumbs: st.thumbs || '', library: st.library || {}, arts: st.arts || {}, settings: st.settings || S.settings, roms: st.roms || [], steam: !!st.steam, deck: !!st.deck, bigArg: !!st.bigArg, desktopArg: !!st.desktopArg, canStartAtLogin: !!st.canStartAtLogin, noSound: !!st.noSound });
+  Object.assign(S, { os: st.os, arch: st.arch, flatpak: !!st.flatpak, version: st.version, site: st.site, thumbs: st.thumbs || '', library: st.library || {}, arts: st.arts || {}, settings: st.settings || S.settings, roms: st.roms || [], steam: !!st.steam, playnite: !!st.playnite, deck: !!st.deck, bigArg: !!st.bigArg, desktopArg: !!st.desktopArg, canStartAtLogin: !!st.canStartAtLogin, noSound: !!st.noSound });
   setClock((S.settings.ui || {}).clock);
   // Each game's mode came with it (a setup that worked hands it back to Easy Setup).
   applyEasySkip();
@@ -7417,8 +7417,10 @@ function gameMenu(id) {
         // Not on a Mac: the shortcut the launcher makes is Linux's .desktop file, which a Mac ignores.
         ...(S.os !== 'macos' ? [{ act: 'desktop', id, label: t('Add to desktop'), icon: 'desk' }] : []),
         ...(S.os === 'windows' || S.os === 'linux' ? [{ act: 'app-menu', id, label: S.os === 'windows' ? t('Add to Start Menu') : t('Add to App Menu'), icon: 'apps' }] : []),
+        // Add to Playnite beside it on every Windows PC: Playnite is looked for when it's picked (open,
+        // installed or in its usual folder), and the launcher says what to do when it isn't found.
         ...(S.steam ? [{ act: 'steam', id, label: t('Add to Steam'), icon: 'steam' }] : []),
-        ...(S.playnite ? [{ act: 'playnite', id, label: t('Add to Playnite'), icon: 'steam' }] : []),
+        ...(S.playnite || S.os === 'windows' ? [{ act: 'playnite', id, label: t('Add to Playnite'), icon: 'steam' }] : []),
         { act: 'fav', id, label: favs().includes(id) ? t('Remove from Favorites') : t('Add to Favorites'), icon: 'star' },
       ] },
       ...projectItem(x),
