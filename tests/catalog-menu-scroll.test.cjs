@@ -61,7 +61,7 @@ test('an opener that was redrawn away is not focused', () => {
 });
 
 test('a right-click on a game remembers what was clicked, so focus goes back there', () => {
-  assert.match(app, /return menu\(at, gameMenu\(id\), back\);/);
+  assert.match(app, /loadStartWith\(id\)\.then\(\(\) => menu\(at, gameMenu\(id\), back\)\);/);
 });
 
 test('a menu opened from a button goes back to that button', () => {
