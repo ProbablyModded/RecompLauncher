@@ -76,18 +76,15 @@ fn rebase_paths(g: &mut Installed, from: &Path, to: &Path) {
         }
     };
     g.path = to.to_path_buf();
-    for p in [g.exe.as_mut(), g.game_copy.as_mut(), g.update_copy.as_mut(), g.build_dir.as_mut(), g.setup.as_mut()].into_iter().flatten() {
+    for p in [g.exe.as_mut(), g.setup.as_mut()].into_iter().flatten() {
         fix(p);
     }
-    for p in g.setup_inputs.values_mut() {
+    // The game's copy and update are inputs too (`game`, `update`), with what they were unpacked
+    // from and the checks that say they haven't changed.
+    for p in g.setup_inputs.values_mut().chain(g.unpacked_from.values_mut()) {
         fix(p);
     }
-    if let Some(m) = g.manual.as_mut() {
-        for p in [m.exe.as_mut(), m.copy.as_mut()].into_iter().flatten() {
-            fix(p);
-        }
-    }
-    if let Some(c) = g.copy_check.as_mut() {
+    for c in g.input_checks.values_mut() {
         fix(&mut c.path);
     }
 }
@@ -127,7 +124,7 @@ pub fn forget(dir: &Path, id: &str, path: &Path, libs: &[PathBuf]) {
 
 fn source_for<'a>(g: &'a Installed, cat: &'a Value) -> Source<'a> {
     let version = if g.version.is_empty() { g.tag.as_str() } else { g.version.as_str() };
-    Source { id: &g.id, name: &g.name, game: &g.game, repo: &g.repo, version, local: g.local, copy: g.game_copy.as_deref(), entry: catalog::app(cat, &g.id), cat }
+    Source { id: &g.id, name: &g.name, game: &g.game, repo: &g.repo, version, local: g.local, copy: g.setup_inputs.get("game").map(PathBuf::as_path), entry: catalog::app(cat, &g.id), cat }
 }
 
 /// A folder that has something in it.
@@ -566,12 +563,13 @@ mod tests {
 
     #[test]
     fn paths_inside_the_game_folder_follow_it() {
-        let mut g = Installed { id: "g".into(), path: "/lib/g".into(), exe: Some("bin/game.exe".into()), game_copy: Some("/lib/g/rom.z64".into()), update_copy: Some("/elsewhere/u.bin".into()), ..Default::default() };
+        let inputs = [("game".to_string(), PathBuf::from("/lib/g/rom.z64")), ("update".to_string(), PathBuf::from("/elsewhere/u.bin"))].into_iter().collect();
+        let mut g = Installed { id: "g".into(), path: "/lib/g".into(), exe: Some("bin/game.exe".into()), setup_inputs: inputs, ..Default::default() };
         rebase_paths(&mut g, Path::new("/lib/g"), Path::new("/lib/N64/Game"));
         assert_eq!(g.path, PathBuf::from("/lib/N64/Game"));
         assert_eq!(g.exe, Some(PathBuf::from("bin/game.exe")));
-        assert_eq!(g.game_copy, Some(PathBuf::from("/lib/N64/Game/rom.z64")));
-        assert_eq!(g.update_copy, Some(PathBuf::from("/elsewhere/u.bin")));
+        assert_eq!(g.setup_inputs["game"], PathBuf::from("/lib/N64/Game/rom.z64"));
+        assert_eq!(g.setup_inputs["update"], PathBuf::from("/elsewhere/u.bin"));
     }
 
     #[test]
