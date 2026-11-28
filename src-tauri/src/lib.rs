@@ -1148,12 +1148,18 @@ async fn trending(st: State<'_, App>) -> Res<Value> {
 /// The partner card's data for this launch (none when the site can't be reached).
 #[tauri::command]
 async fn ig_info(st: State<'_, App>) -> Res<Value> {
+    if cloud::NO_ADS {
+        return Ok(Value::Null);
+    }
     Ok(catalog::ig_info(&st.http).await.unwrap_or(Value::Null))
 }
 
 /// The partner card was seen on a game's page.
 #[tauri::command]
 async fn ig_view(st: State<'_, App>, id: String, variant: String, round: u64) -> Res<()> {
+    if cloud::NO_ADS {
+        return Ok(());
+    }
     let ok = |s: &str| !s.is_empty() && s.len() <= 80 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
     if ok(&id) && ok(&variant) {
         let http = st.http.clone();

@@ -425,10 +425,17 @@ pub async fn playtime_reset(app: AppHandle, id: String) -> Res<Value> {
     Ok(json!({ "account": cleared }))
 }
 
+/// Fork (no ads): this build shows no sponsor spots, Home banners booked by sponsors or partner
+/// store cards, and never asks the website for them or reports views of them.
+pub const NO_ADS: bool = true;
+
 /// Sponsor spots for this account in the app ({s: [{id, slot, img, alt, house}]}). Quiet like play time:
 /// signed out, offline or an older website all just give nothing.
 #[tauri::command]
 pub async fn spons_mine(app: AppHandle) -> Res<Value> {
+    if NO_ADS {
+        return Ok(Value::Null);
+    }
     let st = app.state::<App>();
     let Some(a) = load(&st.dir) else { return Ok(Value::Null) };
     let url = format!("{}?a=spons", api());
@@ -453,9 +460,24 @@ pub async fn home_layout(app: AppHandle) -> Res<Value> {
     }
     if let Some(v) = home_fetch(req, &url).await {
         crate::catalog::save(&file, &v);
-        return Ok(v);
+        return Ok(no_ad_banners(v));
     }
-    Ok(crate::catalog::load(&file).filter(home_ok).unwrap_or(Value::Null))
+    Ok(crate::catalog::load(&file).filter(home_ok).map(no_ad_banners).unwrap_or(Value::Null))
+}
+
+/// Fork (no ads): Home's list without what sponsors booked into its banner spots (`sp`). The
+/// launcher's own info boxes and rows stay.
+fn no_ad_banners(mut v: Value) -> Value {
+    if NO_ADS {
+        if let Some(items) = v.get_mut("items").and_then(Value::as_array_mut) {
+            for x in items.iter_mut() {
+                if let Some(o) = x.as_object_mut() {
+                    o.remove("sp");
+                }
+            }
+        }
+    }
+    v
 }
 
 async fn home_fetch(req: reqwest::RequestBuilder, url: &str) -> Option<Value> {
@@ -476,6 +498,9 @@ fn home_ok(v: &Value) -> bool {
 /// A sponsor spot was on screen: one view, sent and forgotten.
 #[tauri::command]
 pub async fn spons_seen(app: AppHandle, id: u64) -> Res<()> {
+    if NO_ADS {
+        return Ok(());
+    }
     let st = app.state::<App>();
     let http = st.http.clone();
     let url = format!("{}/api/spons.php?seen={id}", crate::catalog::base());
