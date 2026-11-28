@@ -6625,7 +6625,7 @@ async function checkUpdates(loud) {
     S.updBasis = checked;
     holdUpdates();
     S.updInfo = {};
-    hoardNow();
+    if (typeof hoardNow === 'function') hoardNow();
   } catch (e) { if (loud) fail(e); return false; }
   renderSide();
   if (window.tvRefresh && document.body.classList.contains('tv-on')) window.tvRefresh();

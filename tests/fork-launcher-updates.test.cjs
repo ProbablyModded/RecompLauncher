@@ -26,7 +26,7 @@ function settingsContext(settings) {
     okMark: () => '', portableRow: () => '', geRow: () => '', networkGroup: () => '', hoarderGroup: () => '', selfUpdatesGroup: () => '',
     backdrop: () => '', bar: () => '', region: (s) => s, pageHead: (s) => s,
     homePinned: () => false, ownedGames: () => [], bgMode: () => '', langName: () => 'English',
-    svg: () => '', hints: () => '', HEART: '',
+    svg: () => '', hints: () => '', HEART: '', hideNameItem: () => '',
   });
   c.window = c;
   c.clockRow = () => ''; c.monitorPicked = () => ''; c.monitorName = () => ''; c.setClock = () => {};
